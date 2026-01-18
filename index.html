@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>CodeCleanse AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Outfit:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Outfit', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+              display: ['Space Grotesk', 'sans-serif'],
+            },
+            colors: {
+              // Minimalist Palette
+              paper: '#ffffff',
+              ink: '#000000',
+              subtle: '#f4f4f5', // Zinc 100
+              border: '#e4e4e7', // Zinc 200
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: #ffffff;
+        color: #000000;
+        transition: background-color 0.3s ease, color 0.3s ease;
+      }
+      
+      .dark body {
+        background-color: #000000;
+        color: #ffffff;
+      }
+      
+      /* Minimalist Scrollbar */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #e4e4e7; 
+        border-radius: 99px;
+      }
+      .dark ::-webkit-scrollbar-thumb {
+        background: #333;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #d4d4d8; 
+      }
+
+      /* Utilities */
+      .custom-scrollbar {
+        scrollbar-width: thin;
+        scrollbar-color: #e4e4e7 transparent;
+      }
+      .dark .custom-scrollbar {
+        scrollbar-color: #333 transparent;
+      }
+
+      /* Typography Utilities */
+      .text-display {
+        font-family: 'Space Grotesk', sans-serif;
+        letter-spacing: -0.03em;
+      }
+      
+      /* Selection */
+      ::selection {
+        background: #000;
+        color: #fff;
+      }
+      .dark ::selection {
+        background: #fff;
+        color: #000;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.37.0",
+    "react-markdown": "https://esm.sh/react-markdown@^10.1.0",
+    "jszip": "https://esm.sh/jszip@3.10.1",
+    "js-yaml": "https://esm.sh/js-yaml@4.1.0",
+    "xlsx": "https://esm.sh/xlsx@0.18.5",
+    "pdfjs-dist": "https://esm.sh/pdfjs-dist@3.11.174",
+    "animejs": "https://esm.sh/animejs@3.2.2"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

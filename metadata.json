@@ -1,0 +1,5 @@
+{
+  "name": "CodeCleanse AI",
+  "description": "A Gemini-powered coding assistant specialized in analyzing file contexts and GitHub repositories to identify bugs and unused code.",
+  "requestFramePermissions": []
+}

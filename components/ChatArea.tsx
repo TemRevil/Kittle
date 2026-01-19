@@ -1,17 +1,17 @@
 import React, { useEffect, useRef, useState, useMemo, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Message } from '../types';
-import { User, Check, Copy, Sparkles, ArrowRight, BrainCircuit, ChevronDown, Code2, Layout } from 'lucide-react';
+import { User, Check, Copy, Sparkles, ArrowRight, BrainCircuit, ChevronDown, Code2, Layout, Download, MoreVertical } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MermaidRenderer } from './MermaidRenderer';
 
 interface ChatAreaProps {
   messages: Message[];
-  isLoading: boolean;
   onSuggestionClick: (text: string) => void;
   showThinking: boolean;
   supportsThinking: boolean;
   isDesignMode: boolean;
+  isLoading: boolean;
 }
 
 // --- Components ---
@@ -106,7 +106,7 @@ const LiveTimer = memo(({ startTime, label }: { startTime: number, label: string
 });
 
 // Single Message Item - Memoized for Performance
-const MessageItem = memo(({ msg, supportsThinking, showThinking, isDesignMode }: { msg: Message, supportsThinking: boolean, showThinking: boolean, isDesignMode: boolean }) => {
+const MessageItem = memo(({ msg, supportsThinking, showThinking, isDesignMode, isLoadingMessage }: { msg: Message, supportsThinking: boolean, showThinking: boolean, isDesignMode: boolean, isLoadingMessage: boolean }) => {
 
   // Custom Renderer for this message
   // Includes logic to show toggle for mermaid
@@ -116,12 +116,7 @@ const MessageItem = memo(({ msg, supportsThinking, showThinking, isDesignMode }:
       const codeContent = String(children).replace(/\n$/, '');
 
       if (match && match[1] === 'mermaid') {
-        // Strict Mode: Only render visual if Design Mode is enabled globally
-        if (isDesignMode) {
-          return <MermaidRenderer code={codeContent} />;
-        }
-        // Fallback to code block if mode is off (Prompt should prevent this, but this is the safety net)
-        return <CodeBlock language={match[1]}>{codeContent}</CodeBlock>;
+        return <MermaidRenderer code={codeContent} isGenerating={isLoadingMessage} />;
       }
 
       if (match) {
@@ -137,39 +132,80 @@ const MessageItem = memo(({ msg, supportsThinking, showThinking, isDesignMode }:
     ul: ({ children }: any) => <ul className="list-disc pl-5 my-4 space-y-2 opacity-90">{children}</ul>,
     ol: ({ children }: any) => <ol className="list-decimal pl-5 my-4 space-y-2 opacity-90">{children}</ol>,
     h1: ({ children }: any) => <h1 className="text-2xl font-display font-bold mt-8 mb-4">{children}</h1>,
-    h2: ({ children }: any) => <h2 className="text-xl font-display font-bold mt-6 mb-3">{children}</h2>,
-    h3: ({ children }: any) => <h3 className="text-lg font-display font-bold mt-5 mb-2">{children}</h3>,
-    blockquote: ({ children }: any) => <blockquote className="border-l-4 border-gray-200 dark:border-white/20 pl-4 italic my-4 opacity-70">{children}</blockquote>,
+    h2: ({ children }: any) => <h2 className="text-xl font-display font-bold mt-6 mb-3 animate-in fade-in duration-700 fill-mode-both">{children}</h2>,
+    h3: ({ children }: any) => <h3 className="text-lg font-display font-bold mt-5 mb-2 animate-in fade-in duration-700 fill-mode-both">{children}</h3>,
+    p: ({ children }: any) => <p className="mb-4 last:mb-0 animate-in fade-in duration-700 fill-mode-both">{children}</p>,
+    li: ({ children }: any) => <li className="animate-in fade-in duration-700 fill-mode-both">{children}</li>,
+    blockquote: ({ children }: any) => <blockquote className="border-l-4 border-gray-200 dark:border-white/20 pl-4 italic my-4 opacity-70 animate-in fade-in duration-1000 fill-mode-both">{children}</blockquote>,
     a: ({ href, children }: any) => <a href={href} className="underline decoration-1 underline-offset-4 decoration-gray-400 hover:decoration-black dark:hover:decoration-white transition-all font-medium">{children}</a>
-  }), [isDesignMode]);
+  }), [isLoadingMessage]);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(msg.text);
+    // You could add a toast or local state here
+  };
+
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const blob = new Blob([msg.text], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `kittle-message-${msg.timestamp}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className={`message-item flex gap-6 max-w-4xl mx-auto ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+      className={`message-item group flex gap-3 md:gap-6 max-w-4xl mx-auto ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
     >
       {msg.role === 'model' && (
-        <div className="w-10 h-10 rounded-full bg-black dark:bg-white flex items-center justify-center shrink-0 mt-2 shadow-lg">
-          <Sparkles className="w-5 h-5 text-white dark:text-black" />
+        <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-black dark:bg-white flex items-center justify-center shrink-0 mt-1 md:mt-2 shadow-lg">
+          <Sparkles className="w-4 h-4 md:w-5 md:h-5 text-white dark:text-black" />
         </div>
       )}
 
       <div
         className={`
-            relative px-6 py-5 max-w-[90%] md:max-w-[80%] 
+            relative px-4 py-3 md:px-6 md:py-5 max-w-[85%] md:max-w-[80%] 
             ${msg.role === 'user'
-            ? 'bg-black dark:bg-white text-white dark:text-black rounded-3xl rounded-tr-md shadow-2xl'
-            : 'bg-white/40 dark:bg-white/5 backdrop-blur-md border border-black/5 dark:border-white/5 rounded-3xl rounded-tl-md text-gray-800 dark:text-gray-200 shadow-sm'}
+            ? 'bg-black dark:bg-white text-white dark:text-black rounded-2xl md:rounded-3xl rounded-tr-sm md:rounded-tr-md shadow-2xl'
+            : 'bg-white/40 dark:bg-white/5 backdrop-blur-md border border-black/5 dark:border-white/5 rounded-2xl md:rounded-3xl rounded-tl-sm md:rounded-tl-md text-gray-800 dark:text-gray-200 shadow-sm'}
           `}
       >
+        {/* Message Actions */}
+        <div className={`
+          absolute top-2 ${msg.role === 'user' ? 'right-full mr-2' : 'left-full ml-2'} 
+          flex flex-col gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all duration-200
+        `}>
+          <button
+            onClick={handleCopy}
+            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-black dark:hover:text-white transition-colors"
+            title="Copy Message"
+          >
+            <Copy size={14} />
+          </button>
+          <button
+            onClick={handleDownload}
+            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-black dark:hover:text-white transition-colors"
+            title="Download as Markdown"
+          >
+            <Download size={14} />
+          </button>
+        </div>
         {msg.thinking && supportsThinking && showThinking && (
           <ThinkingSection text={msg.thinking} thinkingTime={msg.thinkingTime} />
         )}
 
         {msg.text ? (
-          <div className={`markdown-content text-[15px] leading-7 ${msg.role === 'user' ? 'font-medium' : ''}`}>
+          <div className={`markdown-content text-sm md:text-[15px] leading-6 md:leading-7 ${msg.role === 'user' ? 'font-medium' : ''}`}>
             <ReactMarkdown components={components}>{msg.text}</ReactMarkdown>
           </div>
         ) : (msg.role === 'model' && !msg.thinking && (
@@ -236,7 +272,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto px-6 md:px-12 py-8 space-y-10 custom-scrollbar scroll-smooth">
       {messages.length === 0 && (
-        <div className="flex flex-col justify-center h-full min-h-[400px] max-w-3xl mx-auto">
+        <div className="flex flex-col justify-start pt-4 md:justify-center md:pt-0 h-full min-h-[400px] max-w-3xl mx-auto">
           <div className="mb-8">
             <motion.span
               initial={{ opacity: 0, y: 20 }}
@@ -265,7 +301,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             </motion.p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+          <div className="grid grid-cols-2 gap-3 md:gap-4 w-full">
             {suggestions.map((s, idx) => (
               <motion.button
                 key={idx}
@@ -273,9 +309,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 + (idx * 0.05), duration: 0.4 }}
                 onClick={() => onSuggestionClick(s.prompt)}
-                className="group flex flex-col justify-between p-6 h-32 rounded-2xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-all text-left shadow-sm hover:shadow-xl"
+                className="group flex flex-col justify-between p-4 h-24 md:p-6 md:h-32 rounded-2xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-all text-left shadow-sm hover:shadow-xl"
               >
-                <span className="text-lg font-display font-bold">{s.label}</span>
+                <span className="text-base md:text-lg font-display font-bold leading-tight">{s.label}</span>
                 <div className="flex justify-between items-end">
                   <span className="text-xs opacity-60">Start analysis</span>
                   <ArrowRight className="w-4 h-4 opacity-0 -translate-x-2 group-hover:translate-x-0 group-hover:opacity-100 transition-all" />
@@ -287,13 +323,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       )}
 
       <AnimatePresence mode="popLayout">
-        {messages.map((msg) => (
+        {messages.map((msg, idx) => (
           <MessageItem
             key={msg.id}
             msg={msg}
             supportsThinking={supportsThinking}
             showThinking={showThinking}
             isDesignMode={isDesignMode}
+            isLoadingMessage={isLoading && idx === messages.length - 1}
           />
         ))}
       </AnimatePresence>

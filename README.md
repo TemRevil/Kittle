@@ -1,12 +1,11 @@
 <div align="center">
   <h1>✨ Kittle</h1>
   <p><strong>Your Intelligent Coding Companion</strong></p>
-  
   <p>
     <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=next.js" alt="Next.js" /></a>
     <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-5.0-blue?style=for-the-badge&logo=typescript" alt="TypeScript" /></a>
     <a href="https://tailwindcss.com"><img src="https://img.shields.io/badge/Tailwind_CSS-3.0-38B2AC?style=for-the-badge&logo=tailwind-css" alt="Tailwind" /></a>
-    <a href="https://deepmind.google/technologies/gemini/"><img src="https://img.shields.io/badge/Powered_by-Gemini-8E75B2?style=for-the-badge&logo=google-gemini" alt="Gemini" /></a>
+    <img src="https://img.shields.io/badge/AI_Engine-Multi--Model-white?style=for-the-badge&logo=openai" alt="Multi-Model" />
   </p>
 </div>
 
@@ -20,7 +19,7 @@
 
 | Feature | Description |
 | :--- | :--- |
-| **🧠 Deep Reasoning** | Integrated with **Gemini 2.5/3.0**, **GPT-4**, and **Claude 3**, featuring dedicated *Thinking Modes*. |
+| **🧠 Deep Reasoning** | Supports **Gemini 2.0/3.0**, **GPT-4o**, **Claude 3.5**, and **DeepSeek R1/V3** via your own API keys. |
 | **🎨 Design Mode** | Generate **Mermaid.js** architecture diagrams from your code instantly. Toggle visual/text modes seamlessly. |
 | **📂 Context Aware** | Deep integration with your file system. Upload files or select repository subtrees for analysis. |
 | **🔒 Privacy First** | API Keys are stored locally (browser storage). Your keys never hit our servers. |
@@ -46,8 +45,9 @@ graph TD
     
     subgraph "Providers"
         LLM -.->|API Call| Google[Google Gemini]
-        LLM -.->|API Call| OpenAI[OpenAI GPT-4]
-        LLM -.->|API Call| Anthropic[Claude 3]
+        LLM -.->|API Call| OpenAI[OpenAI GPT-4o]
+        LLM -.->|API Call| Anthropic[Claude 3.5]
+        LLM -.->|API Call| DeepSeek[DeepSeek R1/V3]
     end
 ```
 

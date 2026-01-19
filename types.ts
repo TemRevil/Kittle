@@ -1,4 +1,10 @@
 
+export interface UsageStats {
+  promptTokens: number;
+  completionTokens: number;
+  totalCost: number;
+}
+
 export interface FileContext {
   id: string;
   name: string;
@@ -17,6 +23,11 @@ export interface Message {
   timestamp: number;
   relatedFiles?: string[];
   isNew?: boolean; // Used to trigger entrance animations
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
 }
 
 export interface RepoContent {
@@ -82,7 +93,9 @@ export interface StoredConversation {
   activeFiles: FileContext[];
   githubRepoLink: string;
   repoDetails: RepoDetails | null;
+  repoTree: FileNode[];
   lastModified: number;
+  totalUsage?: UsageStats;
 }
 
 export interface ChatState {
@@ -96,6 +109,7 @@ export interface ChatState {
   thinkingMode: ThinkingMode;
   isSearchEnabled: boolean;
   isDesignMode: boolean;
+  isFullRepoMode: boolean;
   showThinking: boolean;
   currentConversationId: string | null;
   conversations: StoredConversation[];
@@ -105,6 +119,8 @@ export interface ChatState {
     anthropic?: { discoveredModels: LLMModel[] };
     deepseek?: { discoveredModels: LLMModel[] };
   };
+  totalUsage: UsageStats;
+  modelUsage: Record<string, UsageStats>;
 }
 
 export const AVAILABLE_MODELS: Record<LLMProvider, LLMModel[]> = {
@@ -129,4 +145,21 @@ export const AVAILABLE_MODELS: Record<LLMProvider, LLMModel[]> = {
     { id: 'deepseek-reasoner', name: 'DeepSeek R1', hasThinking: true, version: 1 },
     { id: 'deepseek-chat', name: 'DeepSeek V3', hasThinking: false, version: 1 },
   ]
+};
+
+export interface ModelPricing {
+  input: number; // Per 1M tokens
+  output: number; // Per 1M tokens
+}
+
+export const MODEL_PRICING: Record<string, ModelPricing> = {
+  'gemini-2.0-flash-exp': { input: 0.1, output: 0.4 },
+  'gemini-2.0-flash-thinking-exp': { input: 0.1, output: 0.4 },
+  'gemini-1.5-pro': { input: 1.25, output: 3.75 },
+  'gemini-1.5-flash': { input: 0.075, output: 0.3 },
+  'gpt-4o': { input: 2.50, output: 10.00 },
+  'o1': { input: 15.00, output: 60.00 },
+  'claude-3-5-sonnet-latest': { input: 3.00, output: 15.00 },
+  'deepseek-chat': { input: 0.14, output: 0.28 },
+  'deepseek-reasoner': { input: 0.55, output: 2.19 },
 };

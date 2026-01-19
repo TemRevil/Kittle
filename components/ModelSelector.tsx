@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { LLMConfig, AVAILABLE_MODELS, LLMProvider, LLMModel } from '../types';
-import { Check, ChevronDown, Cpu, Zap, AlertTriangle } from 'lucide-react';
+import { LLMConfig, AVAILABLE_MODELS, LLMProvider, LLMModel, MODEL_PRICING } from '../types';
+import { Check, ChevronDown, Cpu, Zap, AlertTriangle, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface ModelSelectorProps {
@@ -121,11 +121,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ config, onConfigCh
                                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5'}
                                   `}
                               >
-                                <div className="flex flex-col items-start gap-0.5">
-                                  <span className="font-medium flex items-center gap-1.5">
-                                    {model.name}
+                                <div className="flex flex-col items-start gap-0.5 min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 w-full">
+                                    <span className="font-medium text-left truncate">
+                                      {model.name}
+                                    </span>
                                     {model.hasThinking && (
-                                      <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wide ${config.model === model.id
+                                      <span className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wide shrink-0 ${config.model === model.id
                                         ? 'bg-white/20 dark:bg-black/20 text-white dark:text-black'
                                         : 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400'
                                         }`}>
@@ -133,14 +135,22 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ config, onConfigCh
                                         Deep
                                       </span>
                                     )}
-                                  </span>
+                                  </div>
                                   {model.hasThinking && (
-                                    <span className={`text-[9px] ${config.model === model.id ? 'text-white/70 dark:text-black/70' : 'text-gray-400'}`}>
-                                      Fast & Deep modes • Shows reasoning
+                                    <span className={`text-[9px] text-left ${config.model === model.id ? 'text-white/70 dark:text-black/70' : 'text-gray-400'}`}>
+                                      Reasoning available
                                     </span>
                                   )}
                                 </div>
-                                {config.model === model.id && <Check className="w-4 h-4" />}
+
+                                <div className="flex flex-col items-end gap-1 shrink-0 ml-3">
+                                  {MODEL_PRICING[model.id] && (
+                                    <span className={`text-[9px] font-bold ${config.model === model.id ? 'text-white/60 dark:text-black/60' : 'text-gray-400'}`}>
+                                      ${MODEL_PRICING[model.id].input}/${MODEL_PRICING[model.id].output}
+                                    </span>
+                                  )}
+                                  {config.model === model.id && <Check className="w-3.5 h-3.5" />}
+                                </div>
                               </button>
                             ))}
                           </div>
@@ -148,6 +158,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ config, onConfigCh
                       );
                     })
                   )}
+
                 </div>
               </div>
             </motion.div>

@@ -1,8 +1,9 @@
 import { RepoDetails, RepoContent, FileContext, FileNode } from "../types";
 import { buildFileTree } from "../utils";
+import JSZip from 'jszip';
 
 const IGNORED_EXTENSIONS = [
-  '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', 
+  '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico',
   '.lock', '.pdf', '.mp4', '.mov', '.mp3', '.zip', '.tar', '.gz'
 ];
 
@@ -43,7 +44,7 @@ export const fetchRepoDetails = async (input: string): Promise<RepoDetails | nul
     if (!owner || !repo) return null;
 
     const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
-    
+
     if (!response.ok) {
       if (response.status === 404) {
         console.warn("Repository not found (or is private).");
@@ -82,13 +83,13 @@ export const fetchRepoDetails = async (input: string): Promise<RepoDetails | nul
 
 export const fetchGithubFileContent = async (owner: string, repo: string, branch: string, path: string): Promise<FileContext> => {
   const downloadUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
-  
+
   const response = await fetch(downloadUrl);
   if (!response.ok) {
     throw new Error(`Failed to fetch file content: ${path}`);
   }
 
-  const isImage = /\.(png|jpg|jpeg|gif|svg|webp)$/i.test(path);
+  const isImage = /\.(png|jpg|jpeg|gif|webp)$/i.test(path);
   let content = '';
 
   if (isImage) {
@@ -108,29 +109,23 @@ export const fetchGithubFileContent = async (owner: string, repo: string, branch
 
   return {
     id: `gh-${path}-${Date.now()}`,
-    name: path, 
-    type: isImage ? `image/${path.split('.').pop()}` : 'text/plain',
+    name: path,
+    type: isImage ? `image/${path.split('.').pop() === 'jpg' ? 'jpeg' : path.split('.').pop()}` : (path.endsWith('.svg') ? 'image/svg+xml' : 'text/plain'),
     content: content,
     category: isImage ? 'image' : 'code'
   };
 };
 
-/**
- * 1. Fetches recursive tree
- * 2. Builds visual FileNode tree
- * 3. Generates REPOSITORY_MAP.md
- * 4. DOES NOT download all files content (lazy loading)
- */
 export const fetchRepoStructure = async (repo: RepoDetails): Promise<{ tree: FileNode[], mapFile: FileContext }> => {
   try {
     const { owner, name, default_branch } = repo;
-    
+
     // 1. Fetch the recursive tree
     const treeResponse = await fetch(`https://api.github.com/repos/${owner.login}/${name}/git/trees/${default_branch}?recursive=1`);
-    
+
     if (!treeResponse.ok) {
-       console.warn("Failed to fetch recursive tree.");
-       throw new Error("Failed to fetch repository tree");
+      console.warn("Failed to fetch recursive tree.");
+      throw new Error("Failed to fetch repository tree");
     }
 
     const treeData = await treeResponse.json();
@@ -141,14 +136,69 @@ export const fetchRepoStructure = async (repo: RepoDetails): Promise<{ tree: Fil
 
     // 3. Generate Structure Map for AI
     const allPaths = allItems.map((item: any) => {
-        return item.type === 'tree' ? `${item.path}/` : item.path;
+      return item.type === 'tree' ? `${item.path}/` : item.path;
     });
-    
-    const structureContent = `Repository Map for ${owner.login}/${name} (${default_branch})\n` +
-                             `--------------------------------------------------\n` +
-                             `Total Items: ${allPaths.length}\n\n` +
-                             allPaths.join('\n');
-    
+
+    let structureContent = `Repository Map for ${owner.login}/${name} (${default_branch})\n` +
+      `--------------------------------------------------\n` +
+      `Total Items: ${allPaths.length}\n\n` +
+      `### FILE STRUCTURE ###\n` +
+      allPaths.join('\n') +
+      `\n\n### FULL REPOSITORY CONTENT ###\n` +
+      `Below is the content of all text-based files in the repository:\n\n`;
+
+    // 4. Fetch Full Content via Raw URLs (Avoids CORS issues with ZIP)
+    try {
+      console.log("Fetching full repo content via raw channels...");
+
+      let filesProcessed = 0;
+      const MAX_FILES = 60; // Reasonable limit for browser parallel fetch
+      const MAX_TOTAL_SIZE = 400 * 1024; // ~100k-150k tokens (Safe for 250k TPM limits)
+      let currentSize = 0;
+
+      // Filter valid code files from the tree
+      const targetFiles = allItems.filter((item: any) => {
+        if (!item || !item.path || item.type !== 'blob') return false;
+        const ext = '.' + item.path.split('.').pop()?.toLowerCase();
+        const isIgnoredExt = IGNORED_EXTENSIONS.includes(ext);
+        const isIgnoredDir = IGNORED_DIRS.some(d => (item.path as string).includes(`/${d}/`) || (item.path as string).startsWith(`${d}/`));
+        return !isIgnoredExt && !isIgnoredDir;
+      }).slice(0, MAX_FILES);
+
+      console.log(`Queueing ${targetFiles.length} files for parallel fetch...`);
+
+      const filePromises = targetFiles.map(async (item: any) => {
+        try {
+          const rawUrl = `https://raw.githubusercontent.com/${owner.login}/${name}/${default_branch}/${item.path}`;
+          const res = await fetch(rawUrl);
+          if (!res.ok) return "";
+
+          const content = await res.text();
+          if (currentSize + content.length > MAX_TOTAL_SIZE) return "";
+
+          currentSize += content.length;
+          filesProcessed++;
+          return `\n--- START FILE: ${item.path} ---\n${content}\n--- END FILE: ${item.path} ---\n`;
+        } catch (e) {
+          return "";
+        }
+      });
+
+      const fileContents = await Promise.all(filePromises);
+      const validContents = fileContents.filter(c => c !== "");
+      structureContent += validContents.join('\n');
+
+      console.log(`Successfully merged ${filesProcessed} files into context. Total size: ${(currentSize / 1024).toFixed(1)}KB`);
+
+      if (targetFiles.length > MAX_FILES) {
+        structureContent += `\n\n[Note: Only the first ${MAX_FILES} files were included to preserve performance.]\n`;
+      }
+
+    } catch (err) {
+      console.warn("Failed to aggregate repo contents:", err);
+      structureContent += "\n[Error aggregating full content. Only structure is available.]\n";
+    }
+
     const mapFile: FileContext = {
       id: `repo-structure-${Date.now()}`,
       name: 'REPOSITORY_MAP.md',

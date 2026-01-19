@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 interface MermaidRendererProps {
     code: string;
+    isGenerating?: boolean;
 }
 
 // Simple Portal Component
@@ -16,8 +17,15 @@ const Portal = ({ children }: { children: React.ReactNode }) => {
     return createPortal(children, document.body);
 };
 
+// Helper for pinch zoom
+const getDistance = (t1: React.Touch, t2: React.Touch) => {
+    const dx = t1.clientX - t2.clientX;
+    const dy = t1.clientY - t2.clientY;
+    return Math.hypot(dx, dy);
+};
+
 // Memoize to prevent re-renders when code hasn't changed
-export const MermaidRenderer = memo<MermaidRendererProps>(function MermaidRenderer({ code }) {
+export const MermaidRenderer = memo<MermaidRendererProps>(function MermaidRenderer({ code, isGenerating }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [svg, setSvg] = useState<string>('');
     const [error, setError] = useState<string | null>(null);
@@ -29,6 +37,8 @@ export const MermaidRenderer = memo<MermaidRendererProps>(function MermaidRender
     const [pan, setPan] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
     const dragStart = useRef({ x: 0, y: 0 });
+    const pinchStartDist = useRef<number>(0);
+    const pinchStartScale = useRef<number>(1);
 
     const renderDiagram = useCallback(async (diagramCode: string) => {
         setIsLoading(true);
@@ -132,8 +142,8 @@ export const MermaidRenderer = memo<MermaidRendererProps>(function MermaidRender
     const handleWheel = (e: React.WheelEvent) => {
         if (!isFullscreen) return;
 
-        const delta = -e.deltaY * 0.002;
-        const newScale = Math.min(5, Math.max(0.5, scale + delta));
+        const delta = -e.deltaY * 0.008; // Faster zoom speed
+        const newScale = Math.min(20, Math.max(0.2, scale + delta)); // Max 20x (2000%)
 
         const mouseX = e.clientX;
         const mouseY = e.clientY;
@@ -170,6 +180,42 @@ export const MermaidRenderer = memo<MermaidRendererProps>(function MermaidRender
         setIsDragging(false);
     };
 
+    const handleTouchStart = (e: React.TouchEvent) => {
+        if (!isFullscreen) return;
+        if (e.touches.length === 1) {
+            setIsDragging(true);
+            const touch = e.touches[0];
+            dragStart.current = { x: touch.clientX - pan.x, y: touch.clientY - pan.y };
+        } else if (e.touches.length === 2) {
+            pinchStartDist.current = getDistance(e.touches[0], e.touches[1]);
+            pinchStartScale.current = scale;
+            setIsDragging(false);
+        }
+    };
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+        if (!isFullscreen) return;
+
+        if (e.touches.length === 1 && isDragging) {
+            const touch = e.touches[0];
+            setPan({
+                x: touch.clientX - dragStart.current.x,
+                y: touch.clientY - dragStart.current.y
+            });
+        } else if (e.touches.length === 2) {
+            const dist = getDistance(e.touches[0], e.touches[1]);
+            if (pinchStartDist.current > 0) {
+                const ratio = dist / pinchStartDist.current;
+                const newScale = Math.min(20, Math.max(0.2, pinchStartScale.current * ratio));
+                setScale(newScale);
+            }
+        }
+    };
+
+    const handleTouchEnd = () => {
+        setIsDragging(false);
+    };
+
     const handleContextMenu = (e: React.MouseEvent) => {
         if (isFullscreen) {
             e.preventDefault();
@@ -179,7 +225,7 @@ export const MermaidRenderer = memo<MermaidRendererProps>(function MermaidRender
     return (
         <>
             <div className="group relative my-8 bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm transition-all hover:shadow-md">
-                <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                <div className="absolute top-4 right-4 flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10">
                     <button
                         onClick={(e) => { e.stopPropagation(); setIsFullscreen(true); }}
                         className="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-500 hover:text-black dark:hover:text-white shadow-sm transition-all hover:scale-105"
@@ -238,11 +284,14 @@ export const MermaidRenderer = memo<MermaidRendererProps>(function MermaidRender
                         onMouseMove={handleMouseMove}
                         onMouseUp={handleMouseUp}
                         onMouseLeave={handleMouseUp}
+                        onTouchStart={handleTouchStart}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
                         onContextMenu={handleContextMenu}
                     >
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-white/10 bg-white/50 dark:bg-black/50 backdrop-blur-sm z-50 shadow-sm relative pointer-events-auto">
+                        <div className="flex items-center justify-between px-3 py-2 md:px-6 md:py-4 border-b border-gray-200 dark:border-white/10 bg-white/50 dark:bg-black/50 backdrop-blur-sm z-50 shadow-sm relative pointer-events-auto">
                             <h3 className="font-display font-bold text-lg text-black dark:text-white flex items-center gap-2">
-                                Diagram View
+                                <span className="hidden md:inline">Diagram View</span>
                                 <span className="text-xs font-normal text-gray-500 bg-gray-100 dark:bg-white/10 px-2 py-0.5 rounded-full">
                                     {Math.round(scale * 100)}%
                                 </span>
@@ -252,7 +301,7 @@ export const MermaidRenderer = memo<MermaidRendererProps>(function MermaidRender
                                 <div className="flex items-center bg-gray-100 dark:bg-white/5 rounded-lg p-1">
                                     <button onClick={() => setScale(s => Math.max(0.5, s - 0.5))} className="p-2 text-gray-500 hover:text-black dark:hover:text-white transition-colors rounded-md hover:bg-white dark:hover:bg-white/10"><ZoomOut size={18} /></button>
                                     <button onClick={() => { setScale(1); setPan({ x: 0, y: 0 }); }} className="px-3 py-1 text-xs font-mono text-gray-500 hover:text-black dark:hover:text-white transition-colors border-x border-gray-200 dark:border-white/5 mx-1" title="Reset Zoom">Reset</button>
-                                    <button onClick={() => setScale(s => Math.min(5, s + 0.5))} className="p-2 text-gray-500 hover:text-black dark:hover:text-white transition-colors rounded-md hover:bg-white dark:hover:bg-white/10"><ZoomIn size={18} /></button>
+                                    <button onClick={() => setScale(s => Math.min(20, s + 0.5))} className="p-2 text-gray-500 hover:text-black dark:hover:text-white transition-colors rounded-md hover:bg-white dark:hover:bg-white/10"><ZoomIn size={18} /></button>
                                 </div>
                                 <div className="w-px h-6 bg-gray-200 dark:bg-white/10 mx-4" />
                                 <button onClick={() => setIsFullscreen(false)} className="p-2 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-500 hover:text-red-500 transition-colors"><X size={24} /></button>
@@ -261,8 +310,12 @@ export const MermaidRenderer = memo<MermaidRendererProps>(function MermaidRender
 
                         <div
                             className={`flex-1 overflow-hidden relative ${isDragging ? 'cursor-grabbing' : 'cursor-text'} bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#ffffff15_1px,transparent_1px)] [background-size:24px_24px]`}
+                            style={{ touchAction: 'none' }}
                             onWheel={handleWheel}
                             onMouseDown={handleMouseDown}
+                            onTouchStart={handleTouchStart}
+                            onTouchMove={handleTouchMove}
+                            onTouchEnd={handleTouchEnd}
                         >
                             <div
                                 style={{
@@ -274,8 +327,8 @@ export const MermaidRenderer = memo<MermaidRendererProps>(function MermaidRender
                             >
                                 <div className="mermaid-container pointer-events-auto select-text" dangerouslySetInnerHTML={{ __html: svg }} />
                             </div>
-                            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/80 text-white text-xs rounded-full shadow-lg backdrop-blur-sm pointer-events-none opacity-50">
-                                Right-Click & Drag to Pan • Scroll to Zoom
+                            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/80 text-white text-xs rounded-full shadow-lg backdrop-blur-sm pointer-events-none opacity-50 whitespace-nowrap">
+                                Drag to Pan • Zoom Buttons
                             </div>
                         </div>
                     </motion.div>

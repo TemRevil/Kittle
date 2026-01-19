@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FileContext, FileNode, StoredConversation } from '../types';
-import { Trash2, FileCode, FileImage, Github, Plus, Layers, Sun, Moon, Box, ArrowRight, Settings, MessageSquare, Clock, PlusCircle } from 'lucide-react';
+import { Trash2, FileCode, FileImage, Github, Plus, Layers, Sun, Moon, Box, ArrowRight, Settings, MessageSquare, Clock, PlusCircle, CheckSquare, Lock, BarChart3 } from 'lucide-react';
 import { FileExplorer } from './FileExplorer';
 import { motion } from 'motion/react';
 
@@ -16,7 +16,9 @@ interface SidebarProps {
   toggleTheme: () => void;
   className?: string;
   onRepoFileClick: (path: string) => void;
-  isLoadingFile?: string | null;
+  onSelectAllFiles?: () => void;
+  isRepoLocked?: boolean;
+  loadingFilePaths?: string[];
   onResetConfig: () => void;
   conversations: StoredConversation[];
   currentConversationId: string | null;
@@ -37,7 +39,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   toggleTheme,
   className,
   onRepoFileClick,
-  isLoadingFile,
+  onSelectAllFiles,
+  isRepoLocked,
+  loadingFilePaths,
   onResetConfig,
   conversations,
   currentConversationId,
@@ -45,7 +49,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeleteConversation,
   onNewChat
 }) => {
-  const [activeTab, setActiveTab] = useState<'context' | 'explorer' | 'history'>('history');
+  const [activeTab, setActiveTab] = useState<'context' | 'explorer' | 'history'>('context');
+  const [historySort, setHistorySort] = useState<'time' | 'tokens'>('time');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -83,13 +89,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* GitHub Input Section */}
         <div className="px-8 mb-8 shrink-0">
-          <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 block">
-            Repository
-          </label>
+          <div className="flex items-center justify-between mb-3">
+            <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">
+              Repository
+            </label>
+            {isRepoLocked && (
+              <span className="flex items-center gap-1 text-[9px] font-bold text-amber-500 uppercase tracking-tight">
+                <Lock className="w-2.5 h-2.5" /> Locked to chat
+              </span>
+            )}
+          </div>
           <div className="flex gap-2">
             <div className="relative group flex-1">
               <input
                 type="text"
+                disabled={isRepoLocked}
                 value={githubLink}
                 onChange={(e) => onGithubLinkChange(e.target.value)}
                 onKeyDown={(e) => {
@@ -98,12 +112,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }
                 }}
                 placeholder="username/repo"
-                className="w-full bg-gray-50 dark:bg-zinc-900 border-none rounded-xl px-4 py-3 text-sm font-medium focus:ring-1 focus:ring-black dark:focus:ring-white transition-all placeholder:text-gray-400"
+                className={`w-full bg-gray-50 dark:bg-zinc-900 border-none rounded-xl px-4 py-3 text-sm font-medium transition-all placeholder:text-gray-400
+                  ${isRepoLocked ? 'opacity-60 cursor-not-allowed italic' : 'focus:ring-1 focus:ring-black dark:focus:ring-white'}
+                `}
               />
             </div>
             <button
               onClick={onGithubEnter}
-              className="p-3 bg-black dark:bg-white text-white dark:text-black rounded-xl hover:opacity-80 transition-opacity"
+              disabled={isRepoLocked}
+              className={`p-3 bg-black dark:bg-white text-white dark:text-black rounded-xl transition-opacity
+                ${isRepoLocked ? 'opacity-20 cursor-not-allowed' : 'hover:opacity-80'}
+              `}
             >
               <ArrowRight className="w-4 h-4" />
             </button>
@@ -152,10 +171,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {activeTab === 'history' && (
             <div className="space-y-4 animate-in fade-in duration-300">
               <div className="flex items-center justify-between mb-2">
-                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">
-                  Recent Chats
-                </label>
-                <span className="text-[10px] text-gray-400 font-medium">{conversations.length} saved</span>
+                <div className="flex flex-col">
+                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1">
+                    Recent Chats
+                  </label>
+                  <span className="text-[9px] text-gray-400 font-bold uppercase tracking-[0.1em]">{conversations.length} total sessions</span>
+                </div>
+
+                {/* Ranking Toggle */}
+                <div className="flex p-1 bg-gray-100 dark:bg-white/5 rounded-lg">
+                  <button
+                    onClick={() => setHistorySort('time')}
+                    className={`p-1.5 rounded-md transition-all ${historySort === 'time' ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                    title="Sort by Recent"
+                  >
+                    <Clock className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => setHistorySort('tokens')}
+                    className={`p-1.5 rounded-md transition-all ${historySort === 'tokens' ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                    title="Sort by Resource Usage"
+                  >
+                    <BarChart3 className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
 
               {conversations.length === 0 ? (
@@ -166,59 +205,83 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {conversations.map(conv => (
-                    <div
-                      key={conv.id}
-                      onClick={() => onSelectConversation(conv.id)}
-                      className={`group cursor-pointer flex items-center justify-between p-3 rounded-xl transition-all border
-                          ${currentConversationId === conv.id
-                          ? 'bg-black dark:bg-white text-white dark:text-black border-transparent shadow-lg transform scale-[1.02]'
-                          : 'bg-white dark:bg-black border-gray-100 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700 text-gray-600 dark:text-gray-400'}
-                        `}
-                    >
-                      <div className="flex-1 min-w-0 pr-3">
-                        <h4 className={`text-sm font-bold truncate mb-1 ${currentConversationId === conv.id ? 'text-white dark:text-black' : 'text-gray-800 dark:text-white'}`}>
-                          {conv.title || "New Conversation"}
-                        </h4>
-                        <div className={`flex items-center gap-2 text-[10px] ${currentConversationId === conv.id ? 'text-white/60 dark:text-black/60' : 'text-gray-400'}`}>
-                          <Clock className="w-3 h-3" />
-                          <span>
-                            {(() => {
-                              const d = new Date(conv.lastModified);
-                              const now = new Date();
-                              const diff = now.getTime() - d.getTime();
-                              const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                  {[...conversations]
+                    .sort((a, b) => {
+                      if (historySort === 'tokens') {
+                        const totalA = (a.totalUsage?.promptTokens || 0) + (a.totalUsage?.completionTokens || 0);
+                        const totalB = (b.totalUsage?.promptTokens || 0) + (b.totalUsage?.completionTokens || 0);
+                        return totalB - totalA;
+                      }
+                      return b.lastModified - a.lastModified;
+                    })
+                    .map(conv => {
+                      const totalTokens = (conv.totalUsage?.promptTokens || 0) + (conv.totalUsage?.completionTokens || 0);
+                      const hasUsage = totalTokens > 0;
 
-                              if (diff < 60000) return 'Just now';
-                              if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-                              if (diff < 86400000 && now.getDate() === d.getDate()) {
-                                return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                              }
-                              if (days === 1) return 'Yesterday';
-                              if (days < 7) return d.toLocaleDateString([], { weekday: 'short' });
-                              return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-                            })()}
-                          </span>
-                          <span>•</span>
-                          <span>{conv.messages.length} msgs</span>
+                      return (
+                        <div
+                          key={conv.id}
+                          onClick={() => onSelectConversation(conv.id)}
+                          className={`group cursor-pointer flex items-center justify-between p-3 rounded-xl transition-all border
+                              ${currentConversationId === conv.id
+                              ? 'bg-black dark:bg-white text-white dark:text-black border-transparent shadow-lg transform scale-[1.02]'
+                              : 'bg-white dark:bg-black border-gray-100 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700 text-gray-600 dark:text-gray-400'}
+                            `}
+                        >
+                          <div className="flex-1 min-w-0 pr-2">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h4 className={`text-sm font-bold truncate ${currentConversationId === conv.id ? 'text-white dark:text-black' : 'text-gray-800 dark:text-white'}`}>
+                                {conv.title || "New Conversation"}
+                              </h4>
+                              {hasUsage && (
+                                <span className={`shrink-0 text-[8px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded-md ${currentConversationId === conv.id
+                                  ? 'bg-white/20 dark:bg-black/10 text-white dark:text-black'
+                                  : 'bg-blue-500/10 text-blue-500'
+                                  }`}>
+                                  {(totalTokens / 1000).toFixed(1)}k
+                                </span>
+                              )}
+                            </div>
+                            <div className={`flex items-center gap-2 text-[10px] ${currentConversationId === conv.id ? 'text-white/60 dark:text-black/60' : 'text-gray-400'}`}>
+                              <Clock className="w-3 h-3" />
+                              <span>
+                                {(() => {
+                                  const d = new Date(conv.lastModified);
+                                  const now = new Date();
+                                  const diff = now.getTime() - d.getTime();
+                                  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+                                  if (diff < 60000) return 'Just now';
+                                  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+                                  if (diff < 86400000 && now.getDate() === d.getDate()) {
+                                    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                  }
+                                  if (days === 1) return 'Yesterday';
+                                  if (days < 7) return d.toLocaleDateString([], { weekday: 'short' });
+                                  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                                })()}
+                              </span>
+                              <span>•</span>
+                              <span>{conv.messages.length} msgs</span>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteConversation(conv.id);
+                            }}
+                            className={`p-2 rounded-lg transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100
+                               ${currentConversationId === conv.id
+                                ? 'hover:bg-white/20 dark:hover:bg-black/10 text-white/70 dark:text-black/50 hover:text-white dark:hover:text-red-600'
+                                : 'hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500'}
+                             `}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
-                      </div>
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteConversation(conv.id);
-                        }}
-                        className={`p-2 rounded-lg transition-all opacity-0 group-hover:opacity-100
-                           ${currentConversationId === conv.id
-                            ? 'hover:bg-white/20 dark:hover:bg-black/10 text-white/70 dark:text-black/50 hover:text-white dark:hover:text-red-600'
-                            : 'hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500'}
-                         `}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
+                      );
+                    })}
                 </div>
               )}
             </div>
@@ -227,11 +290,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* EXPLORER TAB */}
           {activeTab === 'explorer' && repoTree.length > 0 && (
             <div className="animate-in fade-in duration-300">
+              <div className="flex items-center justify-between mb-4 px-1">
+                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">
+                  Repository Files
+                </label>
+                <button
+                  onClick={onSelectAllFiles}
+                  className="text-[10px] font-bold text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 uppercase tracking-widest flex items-center gap-1 transition-colors"
+                >
+                  <CheckSquare className="w-3 h-3" /> Select All
+                </button>
+              </div>
               <FileExplorer
                 nodes={repoTree}
                 activeFiles={files}
                 onFileClick={onRepoFileClick}
-                isLoadingFile={isLoadingFile}
+                loadingFilePaths={loadingFilePaths}
               />
             </div>
           )}
@@ -273,7 +347,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </div>
                       <button
                         onClick={() => onRemoveFile(file.id)}
-                        className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-red-500 transition-all"
+                        className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-2 text-gray-400 hover:text-red-500 transition-all"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -287,20 +361,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Footer */}
-      <div className="p-8 pt-0 shrink-0 space-y-3">
+      <div className="px-6 pt-6 pb-24 md:px-8 md:py-8 shrink-0 space-y-2 bg-white dark:bg-black z-10 border-t border-gray-100 dark:border-white/5">
         <button
           onClick={onResetConfig}
-          className="flex items-center gap-3 text-sm font-medium text-gray-500 hover:text-black dark:hover:text-white transition-colors w-full"
+          className="w-full flex items-center justify-start gap-3 px-3 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-all"
         >
-          <Settings className="w-4 h-4" />
-          Change Gateway
+          <Settings className="w-3.5 h-3.5" />
+          Configure API Keys
         </button>
 
         <button
           onClick={toggleTheme}
-          className="flex items-center gap-3 text-sm font-medium text-gray-500 hover:text-black dark:hover:text-white transition-colors w-full"
+          className="w-full flex items-center justify-start gap-3 px-3 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-all"
         >
-          {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
           Switch Theme
         </button>
       </div>

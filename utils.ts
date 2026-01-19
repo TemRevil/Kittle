@@ -265,6 +265,14 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+/**
+ * Rough estimate of tokens (4 chars per token)
+ */
+export const estimateTokens = (text: string): number => {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+};
+
 function genId() {
   return Math.random().toString(36).substring(7);
 }

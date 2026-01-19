@@ -1,9 +1,15 @@
 import { GoogleGenAI } from "@google/genai";
-import { FileContext, Message, LLMConfig, ThinkingMode } from "../types";
+import { FileContext, Message, LLMConfig, ThinkingMode, MODEL_PRICING } from "../types";
+import { estimateTokens } from "../utils";
 
 export interface StreamUpdate {
   textDelta?: string;
   thinkingDelta?: string;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
   done?: boolean;
 }
 
@@ -15,9 +21,23 @@ export async function* streamLLMResponse(
   githubLink: string,
   thinkingMode: ThinkingMode,
   isSearchEnabled: boolean,
-  isDesignMode: boolean
+  isDesignMode: boolean,
+  isFullRepoMode: boolean = false,
+  repoTree: any[] = [],
+  allFiles: FileContext[] = []
 ): AsyncGenerator<StreamUpdate, void, unknown> {
   const { provider, model, apiKeys } = config;
+
+  // Repo Tree Formatting Helper
+  const formatRepoTree = (nodes: any[], depth = 0): string => {
+    let out = "";
+    for (const node of nodes) {
+      const indent = "  ".repeat(depth);
+      out += `${indent}${node.name}${node.type === 'tree' ? '/' : ''}\n`;
+      if (node.children) out += formatRepoTree(node.children, depth + 1);
+    }
+    return out;
+  };
   const apiKey = apiKeys[provider];
 
   if (!apiKey) {
@@ -40,9 +60,16 @@ export async function* streamLLMResponse(
   ];
 
   if (thinkingMode === 'concise') {
-    systemLines.push("MODE: CONCISE. Be direct. Use code blocks immediately.");
+    systemLines.push("MODE: FAST/CONCISE. Be direct. Avoid fluff. Provide code solutions immediately.");
   } else {
-    systemLines.push("MODE: DEEP DIVE. Be thorough. Explain \"Why\".");
+    systemLines.push("### MODE: EXTREME DEEP REASONING (STRICT) ###");
+    systemLines.push("You are in a high-priority 'Deep Reasoning' state. The user expects exhaustive, professional, and technical excellence.");
+    systemLines.push("CRITICAL INSTRUCTIONS:");
+    systemLines.push("1. EXTREME CHAIN-OF-THOUGHT: You MUST take your time. Analyze every possible angle. Break down the task into recursive logical steps.");
+    systemLines.push("2. NO HALLUCINATIONS: You have the file structure but NOT all content. PROHIBITED from guessing content of unread files. If you need content, ASK for it.");
+    systemLines.push("3. EXHAUSTIVE DETAIL: Provide extremely detailed 'Why' and 'How'. Do not summarize. The user wants the 'long' version.");
+    systemLines.push("4. BREADTH & DEPTH: Consider security, performance, scalability, and code maintainability simultaneously.");
+    systemLines.push("5. MULTI-STEP VERIFICATION: Mentally run your code before outputting. Verify its integration with the existing project structure.");
   }
 
   if (isSearchEnabled) {
@@ -62,13 +89,14 @@ export async function* streamLLMResponse(
       systemLines.push("PROHIBITED: Do not use ASCII art, text trees, `|--`, `+--`, or indented lists for structure.");
       systemLines.push("PROHIBITED: Do not use invalid graph directions like 'CR' or 'Center-Right'. Use ONLY: 'TD', 'LR', 'TB', 'RL'.");
       systemLines.push("REQUIRED: You must use ```mermaid code blocks.");
-      systemLines.push("CRITICAL INSTRUCTION: You MUST STOP generating text immediately after the closing ``` of the diagram.");
-      systemLines.push("DO NOT write any explanation, notes, or titles after the diagram. The user wants to see the diagram finish loading first.");
-      systemLines.push("Example:\n```mermaid\ngraph TD\nA-->B\n```\n(STOP HERE)");
+      systemLines.push("FLEXIBILITY: You CAN create multiple diagrams in one response if needed. Separate them with text explanations.");
+      systemLines.push("CRITICAL FOR MERMAID: Use graph TD or LR. Avoid complex syntax that might break the renderer.");
     } else {
       systemLines.push("### VISUAL MODE REQUESTED ###");
       systemLines.push("NOTE: The user has requested visual diagrams, but this model may be less optimized for generation.");
-      systemLines.push("Try your best to use Mermaid.js (```mermaid) for structures, but prioritize correctness.");
+      systemLines.push("Try your best to use Mermaid.js (```mermaid) for structures.");
+      systemLines.push("CRITICAL FOR MERMAID: Use QUOTES for all node labels to prevent syntax errors. Example: NodeA[\"Label with (parens)\"].");
+      systemLines.push("Keep node IDs alphanumeric (no spaces). Use graph TD or LR.");
     }
   } else {
     // Design Mode is OFF - prohibit diagrams
@@ -81,10 +109,46 @@ export async function* streamLLMResponse(
 
   if (githubLink) systemLines.push(`Context Repo: ${githubLink}`);
 
+  if (isFullRepoMode && repoTree.length > 0) {
+    const treeString = formatRepoTree(repoTree);
+    console.groupCollapsed(`[LLM] 👁️ Full Repo Context (Structure) - ${repoTree.length} root items`);
+    console.log(treeString);
+    console.groupEnd();
+
+    systemLines.push("### FULL REPO CONTEXT (STRUCTURE ONLY) ###");
+    systemLines.push("The text below shows the COMPLETE file structure of the connected repository.");
+    systemLines.push("IMPORTANT: You do NOT have the content of these files, only their names/paths.");
+    systemLines.push("Use this to understand the project architecture or to tell the user which specific files you need to read to answer their question.");
+    systemLines.push("FILE TREE:");
+    systemLines.push(treeString);
+  }
+
   if (activeFiles.length > 0) {
+    console.log(`[LLM] 📂 Attached Files (Content Sent):`, activeFiles.map(f => f.name));
     systemLines.push("CRITICAL CONTEXT: The user has attached specific files. You MUST read and analyze these files deeply.");
     systemLines.push("Refuse to hallucinate. If the answer is in the files, cite it. If not, say so.");
   }
+
+  // Helper to build a transcript part for history including files/thoughts
+  const buildTranscript = (msg: Message): string => {
+    let content = "";
+    if (msg.role === 'user' && msg.relatedFiles && msg.relatedFiles.length > 0) {
+      content += `Attached Files:\n`;
+      msg.relatedFiles.forEach(path => {
+        const file = allFiles.find(f => f.name === path);
+        if (file && (file.category === 'code' || file.category === 'other')) {
+          content += `\n--- START FILE: ${file.name} ---\n${file.content}\n--- END FILE ---\n`;
+        }
+      });
+    }
+
+    if (msg.role === 'model' && msg.thinking) {
+      content += `<thinking>\n${msg.thinking}\n</thinking>\n\n`;
+    }
+
+    content += msg.text;
+    return content;
+  };
 
   const systemInstructionText = systemLines.join("\n");
 
@@ -107,6 +171,13 @@ export async function* streamLLMResponse(
     // Explicitly confirm enablement to override any previous history restrictions
     userContext += `\n\n[SYSTEM INSTRUCTION]: Visual Design Mode is ENABLED. If relevant, you may generate mermaid diagrams using \`\`\`mermaid code blocks.`;
   }
+  // Calculate prompt tokens
+  const promptTokens = estimateTokens(systemInstructionText) +
+    history.reduce((acc, m) => acc + estimateTokens(m.text) + estimateTokens(m.thinking || ""), 0) +
+    estimateTokens(userContext);
+
+  let completionText = "";
+  let completionThinking = "";
 
   try {
     // --- GOOGLE GEMINI STREAMING ---
@@ -120,16 +191,20 @@ export async function* streamLLMResponse(
       // Note: Google GenAI expects roles to be 'user' or 'model'
       const contents: any[] = history.map(msg => ({
         role: msg.role === 'user' ? 'user' : 'model',
-        parts: [{ text: msg.text }]
+        parts: [{ text: buildTranscript(msg) }]
       }));
 
       // Create the current user message parts
       const currentParts: any[] = [{ text: userContext }];
 
-      // Add images to the current message if any
-      activeFiles.filter(f => f.category === 'image').forEach(f => {
-        currentParts.push({ inlineData: { mimeType: f.type, data: f.content } });
-      });
+      // Add images to the current message if any (Gemini supports: png, jpeg, webp, heic, heif)
+      const supportedImageTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/heic', 'image/heif'];
+      activeFiles
+        .filter(f => f.category === 'image' && supportedImageTypes.includes(f.type.toLowerCase()))
+        .forEach(f => {
+          const mimeType = f.type.toLowerCase() === 'image/jpg' ? 'image/jpeg' : f.type;
+          currentParts.push({ inlineData: { mimeType, data: f.content } });
+        });
 
       contents.push({ role: 'user', parts: currentParts });
 
@@ -154,8 +229,9 @@ export async function* streamLLMResponse(
         // Deep mode gets a larger budget, Fast (concise) gets a smaller one
         generationConfig.thinkingConfig = {
           includeThoughts: true,
-          thinkingBudget: thinkingMode === 'deep' ? 16000 : 4000
+          thinkingBudget: thinkingMode === 'deep' ? 64000 : 8000
         };
+        generationConfig.maxOutputTokens = thinkingMode === 'deep' ? 128000 : 16384;
       }
 
       const result = await ai.models.generateContentStream({
@@ -178,7 +254,10 @@ export async function* streamLLMResponse(
           // Only 'thought: true' parts with text contain actual reasoning (models like gemini-2.0-flash-thinking)
           if ((part as any).thought === true) {
             const thoughtText = (part as any).text || "";
-            if (thoughtText) yield { thinkingDelta: thoughtText };
+            if (thoughtText) {
+              completionThinking += thoughtText;
+              yield { thinkingDelta: thoughtText };
+            }
             continue;
           }
         }
@@ -195,11 +274,15 @@ export async function* streamLLMResponse(
             if (buffer.endsWith("</thinking>")) {
               inThinkingBlock = false;
               const content = buffer.slice(0, -11);
-              if (content) yield { thinkingDelta: content };
+              if (content) {
+                completionThinking += content;
+                yield { thinkingDelta: content };
+              }
               buffer = "";
             } else if (buffer.length > 50) {
               const safePart = buffer.slice(0, -15);
               if (safePart) {
+                completionThinking += safePart;
                 yield { thinkingDelta: safePart };
                 buffer = buffer.slice(-15);
               }
@@ -208,13 +291,18 @@ export async function* streamLLMResponse(
             if (buffer.endsWith("<thinking>")) {
               inThinkingBlock = true;
               const content = buffer.slice(0, -10);
-              if (content) yield { textDelta: content };
+              if (content) {
+                completionText += content;
+                yield { textDelta: content };
+              }
               buffer = "";
             } else if (!buffer.includes("<") || buffer.length > 20) {
               if (buffer.includes("<") && !buffer.includes("<thinking") && buffer.length > 15) {
+                completionText += buffer;
                 yield { textDelta: buffer };
                 buffer = "";
               } else if (!buffer.includes("<")) {
+                completionText += buffer;
                 yield { textDelta: buffer };
                 buffer = "";
               }
@@ -224,9 +312,26 @@ export async function* streamLLMResponse(
       }
 
       if (buffer) {
-        if (inThinkingBlock) yield { thinkingDelta: buffer.replace("</thinking>", "") };
-        else yield { textDelta: buffer };
+        if (inThinkingBlock) {
+          const t = buffer.replace("</thinking>", "");
+          completionThinking += t;
+          yield { thinkingDelta: t };
+        }
+        else {
+          completionText += buffer;
+          yield { textDelta: buffer };
+        }
       }
+
+      const completionTokens = estimateTokens(completionText) + estimateTokens(completionThinking);
+      yield {
+        usage: {
+          promptTokens,
+          completionTokens,
+          totalTokens: promptTokens + completionTokens
+        },
+        done: true
+      };
     }
 
     // --- DEEPSEEK & OPENAI STREAMING ---
@@ -245,7 +350,7 @@ export async function* streamLLMResponse(
             model: model,
             messages: [
               { role: "system", content: systemInstructionText },
-              ...history.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text })),
+              ...history.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: buildTranscript(m) })),
               { role: "user", content: userContext }
             ],
             stream: true
@@ -275,6 +380,7 @@ export async function* streamLLMResponse(
               const json = JSON.parse(data);
               const content = json.choices[0]?.delta?.content;
               if (content) {
+                completionText += content;
                 yield { textDelta: content };
                 hasReceivedContent = true;
               }
@@ -283,7 +389,17 @@ export async function* streamLLMResponse(
         }
       }
 
-      if (!hasReceivedContent) {
+      if (hasReceivedContent) {
+        const completionTokens = estimateTokens(completionText);
+        yield {
+          usage: {
+            promptTokens,
+            completionTokens,
+            totalTokens: promptTokens + completionTokens
+          },
+          done: true
+        };
+      } else {
         throw new Error("No response generated. The model may be overloaded or the request timed out.");
       }
     }
@@ -330,12 +446,23 @@ export async function* streamLLMResponse(
             try {
               const json = JSON.parse(data);
               if (json.type === 'content_block_delta' && json.delta?.text) {
+                completionText += json.delta.text;
                 yield { textDelta: json.delta.text };
               }
             } catch (e) { }
           }
         }
       }
+
+      const completionTokens = estimateTokens(completionText);
+      yield {
+        usage: {
+          promptTokens,
+          completionTokens,
+          totalTokens: promptTokens + completionTokens
+        },
+        done: true
+      };
     }
 
   } catch (error: any) {

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Message } from '../types';
+import { Message, AVAILABLE_MODELS } from '../types';
 import { User, Check, Copy, Sparkles, ArrowRight, BrainCircuit, ChevronDown, Code2, Layout, Download, MoreVertical } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MermaidRenderer } from './MermaidRenderer';
@@ -107,6 +107,16 @@ const LiveTimer = memo(({ startTime, label }: { startTime: number, label: string
 
 // Single Message Item - Memoized for Performance
 const MessageItem = memo(({ msg, supportsThinking, showThinking, isDesignMode, isLoadingMessage }: { msg: Message, supportsThinking: boolean, showThinking: boolean, isDesignMode: boolean, isLoadingMessage: boolean }) => {
+
+  // Find friendly name for display
+  const modelDisplayName = useMemo(() => {
+    if (!msg.model) return null;
+    for (const provider in AVAILABLE_MODELS) {
+      const found = (AVAILABLE_MODELS as any)[provider].find((m: any) => m.id === msg.model);
+      if (found) return found.name;
+    }
+    return msg.model;
+  }, [msg.model]);
 
   // Custom Renderer for this message
   // Includes logic to show toggle for mermaid
@@ -218,12 +228,18 @@ const MessageItem = memo(({ msg, supportsThinking, showThinking, isDesignMode, i
 
         {/* Response time indicator */}
         {msg.role === 'model' && (
-          <div className="mt-4 pt-3 border-t border-black/5 dark:border-white/5 flex items-center gap-2 text-[10px] text-gray-400 dark:text-zinc-600 font-medium uppercase tracking-wide">
+          <div className="mt-4 pt-3 border-t border-black/5 dark:border-white/5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] text-gray-400 dark:text-zinc-600 font-medium uppercase tracking-wide">
+            {modelDisplayName && (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-black/5 dark:bg-white/5 text-gray-500 dark:text-gray-400 font-bold border border-black/5 dark:border-white/5">
+                <Sparkles className="w-2.5 h-2.5" />
+                <span>{modelDisplayName}</span>
+              </div>
+            )}
             {msg.responseTime ? (
-              <>
-                <span>Response time: {(msg.responseTime / 1000).toFixed(1)}s</span>
-                {msg.thinkingTime && <span>• Thinking: {(msg.thinkingTime / 1000).toFixed(1)}s</span>}
-              </>
+              <div className="flex items-center gap-3">
+                <span>Time: {(msg.responseTime / 1000).toFixed(1)}s</span>
+                {msg.thinkingTime && <span>Thinking: {(msg.thinkingTime / 1000).toFixed(1)}s</span>}
+              </div>
             ) : (
               <LiveTimer startTime={msg.timestamp} label="Generating:" />
             )}

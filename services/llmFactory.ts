@@ -11,6 +11,10 @@ export interface StreamUpdate {
     totalTokens: number;
   };
   done?: boolean;
+  error?: {
+    type: 'quota' | 'key' | 'network' | 'model' | 'unknown';
+    message: string;
+  };
 }
 
 export async function* streamLLMResponse(
@@ -24,7 +28,8 @@ export async function* streamLLMResponse(
   isDesignMode: boolean,
   isFullRepoMode: boolean = false,
   repoTree: any[] = [],
-  allFiles: FileContext[] = []
+  allFiles: FileContext[] = [],
+  signal?: AbortSignal
 ): AsyncGenerator<StreamUpdate, void, unknown> {
   const { provider, model, apiKeys } = config;
 
@@ -165,10 +170,7 @@ export async function* streamLLMResponse(
   }
   userContext += `\nQuery: ${currentMessage}`;
 
-  if (!isDesignMode) {
-    userContext += `\n\n[SYSTEM INSTRUCTION]: Visual Design Mode is currently DISABLED. You are PROHIBITED from generating diagram code (like mermaid). If the user asked for a visual, you MUST refuse and use text/lists instead. DO NOT generate 'mermaid' code blocks.`;
-  } else {
-    // Explicitly confirm enablement to override any previous history restrictions
+  if (isDesignMode) {
     userContext += `\n\n[SYSTEM INSTRUCTION]: Visual Design Mode is ENABLED. If relevant, you may generate mermaid diagrams using \`\`\`mermaid code blocks.`;
   }
   // Calculate prompt tokens
@@ -239,7 +241,8 @@ export async function* streamLLMResponse(
         contents: contents,
         systemInstruction: { parts: [{ text: systemInstructionText }] },
         generationConfig: generationConfig,
-        tools: tools
+        tools: tools,
+        requestOptions: { signal }
       } as any);
 
       let buffer = "";
@@ -340,6 +343,7 @@ export async function* streamLLMResponse(
       const response = await fetch("/api/proxy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: signal, // CORRECT: signal is part of fetch options
         body: JSON.stringify({
           url: `${baseUrl}/chat/completions`,
           method: "POST",
@@ -414,12 +418,11 @@ export async function* streamLLMResponse(
           "anthropic-version": "2023-06-01",
           "anthropic-dangerously-allow-browser": "true"
         },
+        signal: signal, // CORRECT: signal is part of fetch options
         body: JSON.stringify({
           model: model,
           max_tokens: 4096,
           messages: [
-            // Anthropic doesn't support system role in messages usually, use system param
-            // But here we put everything in user message for simplicity or proper system param if supported
             { role: "user", content: systemInstructionText + "\n\n" + userContext }
           ],
           stream: true
@@ -466,8 +469,18 @@ export async function* streamLLMResponse(
     }
 
   } catch (error: any) {
-    console.error("Stream Error:", error);
+    if (error.name === 'AbortError' || signal?.aborted) {
+      console.log("[LLM] Stream aborted by user.");
+      return;
+    }
     let msg = error.message || "Failed to fetch response";
+    let type: 'quota' | 'key' | 'network' | 'model' | 'unknown' = 'unknown';
+
+    // Handle Quota Errors (429)
+    if (msg.includes("429") || msg.toLowerCase().includes("quota exceeded") || msg.toLowerCase().includes("resource_exhausted")) {
+      type = 'quota';
+      msg = "API Quota Exceeded. Please try a different model (like Gemini 2.5 Flash) or wait a few minutes.";
+    }
 
     // Diagnostic: If 404, try to list models to console
     if (msg.includes("404") && provider === 'google') {
@@ -475,18 +488,27 @@ export async function* streamLLMResponse(
         const ai = new GoogleGenAI({ apiKey });
         const result = await ai.models.list();
         console.warn("DIAGNOSTIC - Available Models for your key:");
-        // Some SDK versions return a pager, some return an object with models
         const modelList = (result as any).models || result;
         if (modelList && typeof modelList.forEach === 'function') {
           modelList.forEach((m: any) => console.warn(` - ${m.name}`));
         }
         msg += " (Model not found. Available models listed in console)";
+        type = 'model';
       } catch (e) { }
     }
 
-    if (msg.includes("Failed to fetch")) {
-      msg += " (Network error or CORS block. Check API Key and Internet)";
+    if (msg.toLowerCase().includes("api key") || msg.toLowerCase().includes("invalid_key")) {
+      type = 'key';
     }
-    yield { textDelta: `\n\n[Error: ${msg}]` };
+
+    if (msg.includes("Failed to fetch") || msg.includes("network")) {
+      msg += " (Network error or CORS block. Check API Key and Internet)";
+      type = 'network';
+    }
+
+    yield {
+      error: { type, message: msg },
+      textDelta: `\n\n[Error: ${msg}]`
+    };
   }
 }

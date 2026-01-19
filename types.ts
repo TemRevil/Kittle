@@ -28,6 +28,7 @@ export interface Message {
     completionTokens: number;
     totalTokens: number;
   };
+  model?: string; // Track which model generated this response
 }
 
 export interface RepoContent {

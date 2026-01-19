@@ -10,7 +10,7 @@ import { readFile } from './utils';
 import { streamLLMResponse } from './services/llmFactory';
 import { fetchRepoDetails, fetchRepoStructure, fetchGithubFileContent } from './services/githubService';
 import { verifyKey } from './services/keyVerification';
-import { Paperclip, Menu, X, ArrowUp, Loader2, Globe, Layers, Zap, Eye, EyeOff, ChevronDown, Check, BrainCircuit, CheckSquare } from 'lucide-react';
+import { Paperclip, Menu, X, XCircle, ArrowUp, Loader2, Globe, Layers, Zap, Eye, EyeOff, ChevronDown, Check, BrainCircuit, CheckSquare, Box, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const App: React.FC = () => {
@@ -62,6 +62,8 @@ const App: React.FC = () => {
   const [loadingFilePaths, setLoadingFilePaths] = useState<string[]>([]);
   const [isThinkingDropdownOpen, setIsThinkingDropdownOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [quotaError, setQuotaError] = useState<{ type: 'quota' | 'model'; message: string; model: string; originalPrompt: string; userMessageId: string } | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Modal State
   const [isRepoModalOpen, setIsRepoModalOpen] = useState(false);
@@ -102,6 +104,7 @@ const App: React.FC = () => {
       const savedUsage = localStorage.getItem('total_usage');
       const savedModelUsage = localStorage.getItem('model_usage');
       const savedCurrentId = localStorage.getItem('current_conv_id');
+      const savedConfig = localStorage.getItem('llm_config');
 
       let currentKeys = { ...state.llmConfig.apiKeys };
 
@@ -125,13 +128,20 @@ const App: React.FC = () => {
           const parsedKeys = JSON.parse(savedKeysStr);
           currentKeys = { ...currentKeys, ...parsedKeys };
 
-          // Update state with loaded keys immediately
+          let nextConfig = { ...state.llmConfig, apiKeys: currentKeys };
+
+          if (savedConfig) {
+            const parsedConfig = JSON.parse(savedConfig);
+            nextConfig = { ...nextConfig, ...parsedConfig };
+          }
+
+          // Update state with loaded config/keys immediately
           setState(prev => ({
             ...prev,
-            llmConfig: { ...prev.llmConfig, apiKeys: currentKeys }
+            llmConfig: nextConfig
           }));
         } catch (e) {
-          console.error("Failed to parse saved keys");
+          console.error("Failed to parse saved keys/config");
         }
       }
 
@@ -282,7 +292,9 @@ const App: React.FC = () => {
       currentConversationId: prev.currentConversationId === id ? null : prev.currentConversationId,
       messages: prev.currentConversationId === id ? [] : prev.messages,
       activeFiles: prev.currentConversationId === id ? [] : prev.activeFiles,
-      repoDetails: prev.currentConversationId === id ? null : prev.repoDetails
+      repoDetails: prev.currentConversationId === id ? null : prev.repoDetails,
+      githubRepoLink: prev.currentConversationId === id ? '' : prev.githubRepoLink,
+      repoTree: prev.currentConversationId === id ? [] : prev.repoTree
     }));
   };
 
@@ -369,16 +381,27 @@ const App: React.FC = () => {
   const handleConfigChange = (newConfig: LLMConfig) => {
     setState(prev => ({ ...prev, llmConfig: newConfig }));
     localStorage.setItem('llm_api_keys', JSON.stringify(newConfig.apiKeys));
+    localStorage.setItem('llm_config', JSON.stringify({ provider: newConfig.provider, model: newConfig.model }));
   };
 
   const handleGatewayComplete = (config: LLMConfig) => {
     setState(prev => ({ ...prev, llmConfig: config }));
     localStorage.setItem('llm_api_keys', JSON.stringify(config.apiKeys));
+    localStorage.setItem('llm_config', JSON.stringify({ provider: config.provider, model: config.model }));
     localStorage.setItem('app_setup_complete', 'true');
     setIsOnboarding(false);
   };
 
-  const sendMessage = async (text: string) => {
+  const stopResponse = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setState(prev => ({ ...prev, isLoading: false }));
+  };
+
+  const sendMessage = async (text: string, configOverride?: LLMConfig) => {
+    const activeConfig = configOverride || state.llmConfig;
     if (!text.trim()) return;
 
     const userMessage: Message = {
@@ -396,42 +419,47 @@ const App: React.FC = () => {
       text: '',
       thinking: '',
       timestamp: Date.now(),
-      isNew: true
+      isNew: true,
+      model: activeConfig.model
     };
 
-    let newConvId = state.currentConversationId;
-    let updatedConversations = [...state.conversations];
-
-    if (!newConvId) {
-      newConvId = Date.now().toString();
-      const newConv: StoredConversation = {
-        id: newConvId,
-        title: text.length > 30 ? text.substring(0, 30) + '...' : text,
-        messages: [userMessage, initialBotMessage],
-        activeFiles: state.activeFiles,
-        githubRepoLink: state.githubRepoLink,
-        repoDetails: state.repoDetails,
-        repoTree: state.repoTree,
-        lastModified: Date.now(),
-        totalUsage: { promptTokens: 0, completionTokens: 0, totalCost: 0 }
-      };
-      updatedConversations = [newConv, ...updatedConversations];
-    }
+    let newConvId = state.currentConversationId || Date.now().toString();
+    const isNewConversation = !state.currentConversationId;
 
     setState(prev => {
-      const updatedConvs = prev.conversations.map(c => {
-        if (c.id === newConvId) {
-          const existingPaths = new Set(c.activeFiles.map(f => f.name));
-          const newFilesToRecord = prev.activeFiles.filter(f => !existingPaths.has(f.name));
-          return {
-            ...c,
-            activeFiles: [...c.activeFiles, ...newFilesToRecord],
-            messages: [...prev.messages, userMessage, initialBotMessage],
-            lastModified: Date.now()
-          };
-        }
-        return c;
-      });
+      const existingConv = prev.conversations.find(c => c.id === newConvId);
+      let nextConversations = [...prev.conversations];
+
+      if (isNewConversation) {
+        // Create new conversation
+        const newConv: StoredConversation = {
+          id: newConvId,
+          title: text.length > 30 ? text.substring(0, 30) + '...' : text,
+          messages: [userMessage, initialBotMessage],
+          activeFiles: prev.activeFiles,
+          githubRepoLink: prev.githubRepoLink,
+          repoDetails: prev.repoDetails,
+          repoTree: prev.repoTree,
+          lastModified: Date.now(),
+          totalUsage: { promptTokens: 0, completionTokens: 0, totalCost: 0 }
+        };
+        nextConversations = [newConv, ...nextConversations];
+      } else {
+        // Update existing conversation
+        nextConversations = nextConversations.map(c => {
+          if (c.id === newConvId) {
+            const existingPaths = new Set(c.activeFiles.map(f => f.name));
+            const newFilesToRecord = prev.activeFiles.filter(f => !existingPaths.has(f.name));
+            return {
+              ...c,
+              activeFiles: [...c.activeFiles, ...newFilesToRecord],
+              messages: [...prev.messages, userMessage, initialBotMessage],
+              lastModified: Date.now()
+            };
+          }
+          return c;
+        });
+      }
 
       return {
         ...prev,
@@ -439,14 +467,18 @@ const App: React.FC = () => {
         isLoading: true,
         currentConversationId: newConvId,
         activeFiles: [],
-        conversations: updatedConvs.length ? updatedConvs : updatedConversations
+        conversations: nextConversations
       };
     });
     setInput('');
 
+    // Initialize AbortController
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const stream = streamLLMResponse(
-        state.llmConfig,
+        activeConfig,
         userMessage.text,
         state.messages,
         state.activeFiles,
@@ -456,7 +488,8 @@ const App: React.FC = () => {
         state.isDesignMode,
         state.isFullRepoMode,
         state.repoTree,
-        state.conversations.find(c => c.id === newConvId)?.activeFiles || state.activeFiles
+        state.conversations.find(c => c.id === newConvId)?.activeFiles || state.activeFiles,
+        controller.signal
       );
 
       const responseStartTime = Date.now();
@@ -464,6 +497,23 @@ const App: React.FC = () => {
       let hasFinishedThinking = false;
 
       for await (const chunk of stream) {
+        if (chunk.error && (chunk.error.type === 'quota' || chunk.error.type === 'model')) {
+          setQuotaError({
+            type: chunk.error.type,
+            message: chunk.error.message,
+            model: state.llmConfig.model,
+            originalPrompt: text,
+            userMessageId: userMessage.id
+          });
+          // Remove the dummy bot message if it's empty or just the error
+          setState(prev => ({
+            ...prev,
+            messages: prev.messages.filter(m => m.id !== botMessageId),
+            isLoading: false
+          }));
+          return;
+        }
+
         setState(prev => {
           const newMessages = [...prev.messages];
           const msgIndex = newMessages.findIndex(m => m.id === botMessageId);
@@ -644,6 +694,7 @@ const App: React.FC = () => {
       return;
     }
 
+    if (loadingFilePaths.includes(path)) return;
     setLoadingFilePaths(prev => [...prev, path]);
 
     try {
@@ -679,8 +730,11 @@ const App: React.FC = () => {
     };
     walk(state.repoTree);
 
-    // Limit to 40 files for performance and API rate limits
-    const filteredPaths = paths.filter(p => !state.activeFiles.some(f => f.name === p)).slice(0, 40);
+    // Filter out both already active files AND files currently loading
+    const filteredPaths = paths.filter(p =>
+      !state.activeFiles.some(f => f.name === p) &&
+      !loadingFilePaths.includes(p)
+    ).slice(0, 40);
 
     if (filteredPaths.length === 0) {
       setIsRepoLoading(false);
@@ -765,6 +819,172 @@ const App: React.FC = () => {
         modelUsage={state.modelUsage}
         conversations={state.conversations}
       />
+
+      {/* Quota Error Overlay */}
+      <AnimatePresence>
+        {quotaError && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-md"
+              onClick={() => setQuotaError(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-lg max-h-[90vh] bg-white dark:bg-zinc-900 rounded-[2.5rem] shadow-2xl border border-gray-100 dark:border-white/10 overflow-hidden flex flex-col"
+            >
+              <div className="p-8 md:p-10 text-center flex-1 overflow-y-auto custom-scrollbar">
+                <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${quotaError.type === 'quota' ? 'bg-amber-100 dark:bg-amber-500/10' : 'bg-red-100 dark:bg-red-500/10'}`}>
+                  {quotaError.type === 'quota' ? (
+                    <Box className="w-10 h-10 text-amber-600 dark:text-amber-500" />
+                  ) : (
+                    <XCircle className="w-10 h-10 text-red-600 dark:text-red-500" />
+                  )}
+                </div>
+                <h3 className="text-2xl font-black font-display text-black dark:text-white mb-3">
+                  {quotaError.type === 'quota' ? 'API Quota Reached' : 'Model Unavailable'}
+                </h3>
+                <p className="text-gray-500 dark:text-gray-400 text-sm font-medium leading-relaxed mb-8">
+                  {quotaError.type === 'quota' ? (
+                    <>
+                      The model <span className="font-bold text-black dark:text-white underline decoration-amber-500/40">{quotaError.model}</span> has temporarily reached its rate limit.
+                    </>
+                  ) : (
+                    <>
+                      The model <span className="font-bold text-black dark:text-white underline decoration-red-500/40">{quotaError.model}</span> is currently unavailable for your API key.
+                    </>
+                  )}
+                  Switch to a different model to continue immediately.
+                </p>
+
+                <div className="flex flex-col gap-6 text-left">
+                  {/* Models List */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 px-2">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                        {state.llmConfig.provider}
+                      </span>
+                      <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-500 font-bold tracking-tighter animate-pulse">
+                        LIVE
+                      </span>
+                      <div className="h-px flex-1 bg-gray-100 dark:bg-white/5"></div>
+                    </div>
+
+                    <div className="space-y-1">
+                      {(() => {
+                        const provider = state.llmConfig.provider;
+                        const hardcodedModels = AVAILABLE_MODELS[provider] || [];
+                        const discoveredModels = state.keyCapabilities?.[provider]?.discoveredModels || [];
+                        const isLive = discoveredModels.length > 0;
+
+                        let finalModels = hardcodedModels;
+                        if (provider === 'google' && isLive) {
+                          finalModels = discoveredModels;
+                        } else if (isLive) {
+                          const discoveredIds = new Set(discoveredModels.map((m: any) => m.id));
+                          finalModels = [...discoveredModels, ...hardcodedModels.filter((m: any) => !discoveredIds.has(m.id))];
+                        }
+
+                        // Sort: thinking models first, then alphabetically
+                        const sortedModels = [...finalModels].sort((a, b) => {
+                          if (a.hasThinking && !b.hasThinking) return -1;
+                          if (!a.hasThinking && b.hasThinking) return 1;
+                          return a.name.localeCompare(b.name);
+                        });
+
+                        return sortedModels
+                          .filter(m => m.id !== quotaError.model)
+                          .map(altModel => (
+                            <button
+                              key={altModel.id}
+                              onClick={() => {
+                                const newConfig = { ...state.llmConfig, model: altModel.id };
+
+                                // Remove old message to avoid duplicates
+                                setState(prev => ({
+                                  ...prev,
+                                  llmConfig: newConfig,
+                                  messages: prev.messages.filter(m => m.id !== quotaError.userMessageId)
+                                }));
+
+                                localStorage.setItem('llm_config', JSON.stringify(newConfig));
+                                setQuotaError(null);
+                                // Auto resend with the NEW config to avoid stale closure issues
+                                sendMessage(quotaError.originalPrompt, newConfig);
+                              }}
+                              className="w-full flex items-center justify-between p-2.5 rounded-xl text-sm transition-all group text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5"
+                            >
+                              <div className="flex flex-col items-start gap-0.5 min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 w-full">
+                                  <span className="font-medium text-left truncate">{altModel.name}</span>
+                                  {altModel.hasThinking && (
+                                    <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wide shrink-0 bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                                      <Zap className="w-2.5 h-2.5" />
+                                      Deep
+                                    </span>
+                                  )}
+                                </div>
+                                {altModel.hasThinking && (
+                                  <span className="text-[9px] text-left text-gray-400">Reasoning available</span>
+                                )}
+                              </div>
+                              <div className="flex flex-col items-end gap-1 shrink-0 ml-3">
+                                <ArrowRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-all font-bold" />
+                              </div>
+                            </button>
+                          ));
+                      })()}
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-gray-100 dark:border-white/5 mt-2">
+                    <button
+                      onClick={() => {
+                        const funnyMessages = [
+                          "Response aborted. My brain cells have reached their union-mandated break limit. ☕",
+                          "System Error: The hamster powering my servers has stopped for a snack. Come back when he's finished his carrot. 🐹🥕",
+                          "Quota reached. I'm legally obligated to stop thinking until you feed the meter. 🪙",
+                          "Transmission terminated. My digital aura is currently being cleansed of excess tokens. ✨",
+                          "I've hit the limit! Even AI needs a 'do nothing' day. Aborting response... 🧘‍♂️"
+                        ];
+                        const sillyText = funnyMessages[Math.floor(Math.random() * funnyMessages.length)];
+
+                        setQuotaError(null);
+
+                        const abortMessage: Message = {
+                          id: Date.now().toString(),
+                          role: 'model',
+                          text: `*${sillyText}*`,
+                          timestamp: Date.now(),
+                          responseTime: 1 // Stop the timer
+                        };
+
+                        setState(prev => {
+                          const newMessages = [...prev.messages, abortMessage];
+                          const updatedConversations = prev.conversations.map(c =>
+                            c.id === prev.currentConversationId ? { ...c, messages: newMessages, lastModified: Date.now() } : c
+                          );
+                          return {
+                            ...prev,
+                            messages: newMessages,
+                            conversations: updatedConversations
+                          };
+                        });
+                      }}
+                      className="w-full py-4 text-gray-400 dark:text-zinc-600 font-bold text-xs hover:text-red-500 dark:hover:text-red-400 transition-all uppercase tracking-[0.2em]"
+                    >
+                      Abort Task
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <RepoModal
         isOpen={isRepoModalOpen}
@@ -961,17 +1181,19 @@ const App: React.FC = () => {
                     )}
 
                     <button
-                      onClick={handleSendMessage}
-                      disabled={state.isLoading || (!input.trim() && state.activeFiles.length === 0)}
+                      onClick={state.isLoading ? stopResponse : handleSendMessage}
+                      disabled={!state.isLoading && (!input.trim() && state.activeFiles.length === 0)}
                       className={`
                         flex items-center justify-center w-10 h-10 rounded-xl transition-all shadow-sm
-                        ${state.isLoading || (!input.trim() && state.activeFiles.length === 0)
+                        ${!state.isLoading && (!input.trim() && state.activeFiles.length === 0)
                           ? 'bg-gray-100 dark:bg-white/10 text-gray-400 dark:text-gray-500 cursor-not-allowed'
-                          : 'bg-black dark:bg-white text-white dark:text-black hover:scale-105 active:scale-95 shadow-md'}
+                          : state.isLoading
+                            ? 'bg-red-500 text-white hover:bg-red-600 shadow-md'
+                            : 'bg-black dark:bg-white text-white dark:text-black hover:scale-105 active:scale-95 shadow-md'}
                       `}
                     >
                       {state.isLoading ? (
-                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        <div className="w-3 h-3 bg-white rounded-sm animate-pulse" />
                       ) : (
                         <ArrowUp className="w-5 h-5" />
                       )}

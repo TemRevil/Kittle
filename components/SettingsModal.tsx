@@ -100,7 +100,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         initial={{ opacity: 0, scale: 0.95, y: 100 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 100 }}
-                        className="relative w-full max-w-4xl h-[90vh] md:h-[700px] bg-white dark:bg-zinc-950 rounded-t-[2.5rem] md:rounded-[3rem] shadow-2xl border border-gray-100 dark:border-white/10 overflow-hidden flex flex-col md:flex-row"
+                        className="relative w-full max-w-4xl h-auto max-h-[90vh] md:h-[700px] bg-white dark:bg-zinc-950 rounded-t-[2.5rem] md:rounded-[3rem] shadow-2xl border border-gray-100 dark:border-white/10 overflow-hidden flex flex-col md:flex-row"
                     >
                         {/* Aside Sidebar - Desktop Only */}
                         <aside className="hidden md:flex w-72 bg-gray-50/50 dark:bg-white/[0.02] border-r border-gray-100 dark:border-white/5 flex-col">

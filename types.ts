@@ -29,6 +29,7 @@ export interface Message {
     totalTokens: number;
   };
   model?: string; // Track which model generated this response
+  isAborted?: boolean;
 }
 
 export interface RepoContent {

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Message, AVAILABLE_MODELS } from '../types';
-import { User, Check, Copy, Sparkles, ArrowRight, BrainCircuit, ChevronDown, Code2, Layout, Download, MoreVertical } from 'lucide-react';
+import { User, Check, Copy, Sparkles, ArrowRight, BrainCircuit, ChevronDown, Code2, Layout, Download, MoreVertical, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MermaidRenderer } from './MermaidRenderer';
 
@@ -219,10 +219,19 @@ const MessageItem = memo(({ msg, supportsThinking, showThinking, isDesignMode, i
             <ReactMarkdown components={components}>{msg.text}</ReactMarkdown>
           </div>
         ) : (msg.role === 'model' && !msg.thinking && (
-          <div className="flex items-center gap-2 py-2">
-            <span className="w-2 h-2 bg-gray-400 dark:bg-zinc-500 rounded-full animate-bounce"></span>
-            <span className="w-2 h-2 bg-gray-400 dark:bg-zinc-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-            <span className="w-2 h-2 bg-gray-400 dark:bg-zinc-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+          <div className="flex flex-col gap-3 py-2">
+            {msg.isAborted ? (
+              <div className="flex items-center gap-2 text-red-500/70 dark:text-red-400/50 italic text-xs font-medium">
+                <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                <span>Response terminated by user.</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 bg-gray-400 dark:bg-zinc-500 rounded-full animate-bounce"></span>
+                <span className="w-2 h-2 bg-gray-400 dark:bg-zinc-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                <span className="w-2 h-2 bg-gray-400 dark:bg-zinc-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+              </div>
+            )}
           </div>
         ))}
 
@@ -233,6 +242,12 @@ const MessageItem = memo(({ msg, supportsThinking, showThinking, isDesignMode, i
               <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-black/5 dark:bg-white/5 text-gray-500 dark:text-gray-400 font-bold border border-black/5 dark:border-white/5">
                 <Sparkles className="w-2.5 h-2.5" />
                 <span>{modelDisplayName}</span>
+              </div>
+            )}
+            {msg.isAborted && (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-red-500/10 text-red-500 font-bold border border-red-500/10 shrink-0">
+                <X size={10} />
+                <span>ABORTED</span>
               </div>
             )}
             {msg.responseTime ? (

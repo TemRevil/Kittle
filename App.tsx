@@ -108,6 +108,7 @@ const App: React.FC = () => {
 
       let currentKeys = { ...state.llmConfig.apiKeys };
 
+      // 1. Initial State Load (Usage & History) - ALWAYS run this
       if (savedUsage) {
         try {
           const parsed = JSON.parse(savedUsage);
@@ -122,7 +123,27 @@ const App: React.FC = () => {
         } catch (e) { }
       }
 
-      // 1. Try to load saved keys
+      if (savedConversations) {
+        try {
+          const parsed = JSON.parse(savedConversations);
+          const lastConv = savedCurrentId ? parsed.find((c: any) => c.id === savedCurrentId) : null;
+
+          setState(prev => ({
+            ...prev,
+            conversations: parsed,
+            currentConversationId: savedCurrentId || prev.currentConversationId,
+            messages: lastConv ? lastConv.messages : prev.messages,
+            activeFiles: lastConv ? lastConv.activeFiles : prev.activeFiles,
+            githubRepoLink: lastConv ? lastConv.githubRepoLink : prev.githubRepoLink,
+            repoDetails: lastConv ? lastConv.repoDetails : prev.repoDetails,
+            repoTree: (lastConv && lastConv.repoTree) ? lastConv.repoTree : prev.repoTree
+          }));
+        } catch (e) {
+          console.error("Failed to parse conversations");
+        }
+      }
+
+      // 2. Try to load saved keys/config
       if (savedKeysStr) {
         try {
           const parsedKeys = JSON.parse(savedKeysStr);
@@ -135,7 +156,6 @@ const App: React.FC = () => {
             nextConfig = { ...nextConfig, ...parsedConfig };
           }
 
-          // Update state with loaded config/keys immediately
           setState(prev => ({
             ...prev,
             llmConfig: nextConfig
@@ -145,65 +165,35 @@ const App: React.FC = () => {
         }
       }
 
-      // 2. Verify keys before unlocking app
+      // 3. Authorization Check
       if (setupComplete) {
         const providers: LLMProvider[] = ['google', 'openai', 'anthropic', 'deepseek'];
         let allProvidedKeysValid = true;
         let atLeastOneKey = false;
 
-        // Check ALL provided keys
         for (const provider of providers) {
           const key = currentKeys[provider];
-
           if (key && key.trim().length > 0) {
             atLeastOneKey = true;
             if (key.length > 20) {
               const result = await verifyKey(provider, key);
-              if (!result.isValid) {
-                console.warn(`Key for ${provider} is invalid.`);
-                allProvidedKeysValid = false;
-              }
+              if (!result.isValid) allProvidedKeysValid = false;
             } else {
               allProvidedKeysValid = false;
             }
           }
         }
 
-        // Must have at least one key, AND all provided keys must be valid
-        // Also check if we only have the default public key
         const onlyHasDefaultKey = currentKeys.google === process.env.NEXT_PUBLIC_API_KEY &&
           !currentKeys.openai && !currentKeys.anthropic && !currentKeys.deepseek;
 
         if (atLeastOneKey && allProvidedKeysValid && !onlyHasDefaultKey) {
           setIsOnboarding(false);
-
-          // Load conversations only if authorized
-          if (savedConversations) {
-            try {
-              const parsed = JSON.parse(savedConversations);
-              const lastConv = savedCurrentId ? parsed.find((c: any) => c.id === savedCurrentId) : null;
-
-              setState(prev => ({
-                ...prev,
-                conversations: parsed,
-                currentConversationId: savedCurrentId || prev.currentConversationId,
-                messages: lastConv ? lastConv.messages : prev.messages,
-                activeFiles: lastConv ? lastConv.activeFiles : prev.activeFiles,
-                githubRepoLink: lastConv ? lastConv.githubRepoLink : prev.githubRepoLink,
-                repoDetails: lastConv ? lastConv.repoDetails : prev.repoDetails,
-                repoTree: (lastConv && lastConv.repoTree) ? lastConv.repoTree : prev.repoTree
-              }));
-            } catch (e) {
-              console.error("Failed to parse conversations");
-            }
-          }
         } else {
-          // If stored keys are invalid, missing, or only default, force onboarding
           console.warn("Invalid, missing, or default keys detected on startup, forcing onboarding.");
           setIsOnboarding(true);
         }
       } else {
-        // First time users always see the gateway
         setIsOnboarding(true);
       }
 
@@ -397,7 +387,32 @@ const App: React.FC = () => {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
-    setState(prev => ({ ...prev, isLoading: false }));
+    setState(prev => {
+      const nextMessages = [...prev.messages];
+      if (nextMessages.length > 0) {
+        const lastIndex = nextMessages.length - 1;
+        const lastMsg = nextMessages[lastIndex];
+        if (lastMsg.role === 'model' && !lastMsg.responseTime) {
+          nextMessages[lastIndex] = {
+            ...lastMsg,
+            isAborted: true,
+            responseTime: Date.now() - lastMsg.timestamp
+          };
+        }
+      }
+
+      // Also sync current conversation in history
+      const nextConversations = prev.conversations.map(c =>
+        c.id === prev.currentConversationId ? { ...c, messages: nextMessages, lastModified: Date.now() } : c
+      );
+
+      return {
+        ...prev,
+        messages: nextMessages,
+        conversations: nextConversations,
+        isLoading: false
+      };
+    });
   };
 
   const sendMessage = async (text: string, configOverride?: LLMConfig) => {
@@ -497,6 +512,12 @@ const App: React.FC = () => {
       let hasFinishedThinking = false;
 
       for await (const chunk of stream) {
+        // IMMEDIATE STOP CHECK: If user stopped or signal aborted, break the loop and cease all UI updates
+        if (controller.signal.aborted || !abortControllerRef.current) {
+          console.log("[App] Loop termination requested via AbortSignal.");
+          break;
+        }
+
         if (chunk.error && (chunk.error.type === 'quota' || chunk.error.type === 'model')) {
           setQuotaError({
             type: chunk.error.type,

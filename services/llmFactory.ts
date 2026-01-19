@@ -94,14 +94,20 @@ export async function* streamLLMResponse(
       systemLines.push("PROHIBITED: Do not use ASCII art, text trees, `|--`, `+--`, or indented lists for structure.");
       systemLines.push("PROHIBITED: Do not use invalid graph directions like 'CR' or 'Center-Right'. Use ONLY: 'TD', 'LR', 'TB', 'RL'.");
       systemLines.push("REQUIRED: You must use ```mermaid code blocks.");
-      systemLines.push("FLEXIBILITY: You CAN create multiple diagrams in one response if needed. Separate them with text explanations.");
-      systemLines.push("CRITICAL FOR MERMAID: Use graph TD or LR. Avoid complex syntax that might break the renderer.");
+      systemLines.push("FLEXIBILITY: You CAN create multiple diagrams in one response if needed.");
+      systemLines.push("CRITICAL FOR MERMAID FLOWCHARTS:");
+      systemLines.push("1. Use ONLY graph TD or graph LR.");
+      systemLines.push("2. USE DOUBLE QUOTES for ALL labels (nodes and edges). Example: A[\"Node Label\"] --> |\"Edge Label\"| B[\"Another Label\"].");
+      systemLines.push("3. NO SPECIAL CHARS in Node IDs: Use alphanumeric IDs only (e.g., Node1, AppServer).");
+      systemLines.push("4. PARENTHESES: Never use () in labels UNLESS they are inside double quotes. This causes immediate Parse Errors.");
     } else {
       systemLines.push("### VISUAL MODE REQUESTED ###");
       systemLines.push("NOTE: The user has requested visual diagrams, but this model may be less optimized for generation.");
       systemLines.push("Try your best to use Mermaid.js (```mermaid) for structures.");
-      systemLines.push("CRITICAL FOR MERMAID: Use QUOTES for all node labels to prevent syntax errors. Example: NodeA[\"Label with (parens)\"].");
-      systemLines.push("Keep node IDs alphanumeric (no spaces). Use graph TD or LR.");
+      systemLines.push("CRITICAL FOR MERMAID SYNTAX:");
+      systemLines.push("1. ALWAYS use double quotes for labels: A[\"My Label (Safe)\"].");
+      systemLines.push("2. Keep node IDs simple (e.g., A, B, C or AuthNode).");
+      systemLines.push("3. For edge labels with special characters like (), use: A --> |\"Label (Risk D)\"| B.");
     }
   } else {
     // Design Mode is OFF - prohibit diagrams

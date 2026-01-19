@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LLMConfig, LLMProvider } from '../types';
-import { Key, Check, X, XCircle, ExternalLink, Loader2, BarChart3, TrendingUp, DollarSign, Zap } from 'lucide-react';
+import { Key, Check, X, XCircle, ExternalLink, Loader2, BarChart3, TrendingUp, DollarSign, Zap, Settings, Shield, Activity, ChevronRight, Globe, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { verifyKey } from '../services/keyVerification';
 
@@ -39,6 +39,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const [isVerifying, setIsVerifying] = useState(false);
     const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
     const [verifiedProviders, setVerifiedProviders] = useState<Set<string>>(new Set());
+
+    useEffect(() => {
+        if (isOpen) {
+            setCustomKeys(config.apiKeys);
+            setValidationErrors({});
+        }
+    }, [isOpen, config.apiKeys]);
 
     const handleSave = async () => {
         setIsVerifying(true);
@@ -79,152 +86,167 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
 
     const tabs = [
-        { id: 'analytics', label: 'Resource Ranking', icon: TrendingUp },
-        { id: 'models', label: 'Model Breakdown', icon: Zap },
-        { id: 'keys', label: 'API Configuration', icon: Key },
+        { id: 'analytics', label: 'Usage Insights', icon: Activity, description: 'Track your spending and activity' },
+        { id: 'models', label: 'Model Intelligence', icon: Zap, description: 'Analyze performance by engine' },
+        { id: 'keys', label: 'API & Security', icon: Shield, description: 'Manage your secure connections' },
     ] as const;
+
+    if (!isOpen) return null;
 
     return (
         <AnimatePresence>
-            {isOpen && (
-                <div className="fixed inset-0 z-[150] flex items-end md:items-center justify-center p-0 md:p-4">
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={onClose}
-                        className="absolute inset-0 bg-black/60 backdrop-blur-md"
-                    />
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-6 lg:p-12 overflow-hidden bg-black/80 backdrop-blur-xl">
+                {/* Backdrop Click Area */}
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 cursor-pointer"
+                    onClick={onClose}
+                />
 
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: 100 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: 100 }}
-                        className="relative w-full max-w-4xl h-auto max-h-[90vh] md:h-[700px] bg-white dark:bg-zinc-950 rounded-t-[2.5rem] md:rounded-[3rem] shadow-2xl border border-gray-100 dark:border-white/10 overflow-hidden flex flex-col md:flex-row"
-                    >
-                        {/* Aside Sidebar - Desktop Only */}
-                        <aside className="hidden md:flex w-72 bg-gray-50/50 dark:bg-white/[0.02] border-r border-gray-100 dark:border-white/5 flex-col">
-                            <div className="p-8">
-                                <div className="flex items-center gap-3 mb-10">
-                                    <div className="p-2.5 bg-black dark:bg-white rounded-xl">
-                                        <BarChart3 className="w-5 h-5 text-white dark:text-black" />
+                {/* Main Modal Container */}
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                    className="relative w-full h-full max-h-[90dvh] md:h-[85vh] md:max-h-[85vh] max-w-6xl bg-zinc-950 rounded-[2rem] md:rounded-[2.5rem] shadow-[0_0_100px_rgba(0,0,0,0.5)] border md:border border-white/10 overflow-hidden flex flex-col md:flex-row z-10"
+                >
+                    {/* ASIDE SIDEBAR (Desktop) / TOP NAV (Mobile) */}
+                    <aside className="w-full md:w-80 lg:w-96 bg-zinc-900/50 border-b md:border-b-0 md:border-r border-white/5 flex flex-col shrink-0 overflow-y-auto no-scrollbar">
+                        <div className="p-6 md:p-8 md:pb-4 flex flex-col h-full">
+                            <div className="flex items-center justify-between md:justify-start gap-4 mb-6 md:mb-10 shrink-0">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-10 h-10 md:w-12 md:h-12 bg-white rounded-xl md:rounded-2xl flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.2)]">
+                                        <Settings className="w-5 h-5 md:w-6 md:h-6 text-black" />
                                     </div>
-                                    <h2 className="text-xl font-bold font-display text-black dark:text-white tracking-tight">Settings</h2>
-                                </div>
-
-                                <nav className="space-y-2">
-                                    {tabs.map((tab) => (
-                                        <button
-                                            key={tab.id}
-                                            onClick={() => setActiveTab(tab.id)}
-                                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === tab.id
-                                                ? 'bg-black dark:bg-white text-white dark:text-black shadow-lg shadow-black/10'
-                                                : 'text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5'
-                                                }`}
-                                        >
-                                            <tab.icon className="w-4 h-4" />
-                                            {tab.label}
-                                        </button>
-                                    ))}
-                                </nav>
-                            </div>
-
-                            <div className="mt-auto p-8">
-                                <div className="p-6 bg-blue-500/10 dark:bg-blue-500/5 rounded-[2rem] border border-blue-500/20">
-                                    <div className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500 mb-2">Total Spend</div>
-                                    <div className="text-2xl font-display font-black text-black dark:text-white">
-                                        ${totalUsage.totalCost.toFixed(4)}
+                                    <div>
+                                        <h2 className="text-lg md:text-xl font-black text-white tracking-tight">System</h2>
+                                        <p className="text-[9px] md:text-[10px] font-bold text-white/40 uppercase tracking-[0.2em] hidden md:block">Preferences</p>
                                     </div>
-                                    <div className="text-[9px] text-gray-400 mt-1 font-medium">Estimated AI Costs</div>
-                                </div>
-                            </div>
-                        </aside>
-
-                        {/* Mobile Header Tabs */}
-                        <div className="md:hidden flex overflow-x-auto p-4 gap-2 border-b border-gray-100 dark:border-white/5 no-scrollbar">
-                            {tabs.map((tab) => (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => setActiveTab(tab.id)}
-                                    className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${activeTab === tab.id
-                                        ? 'bg-black dark:bg-white text-white dark:text-black'
-                                        : 'bg-gray-100 dark:bg-white/5 text-gray-400'
-                                        }`}
-                                >
-                                    <tab.icon className="w-3.5 h-3.5" />
-                                    {tab.label}
-                                </button>
-                            ))}
-                        </div>
-
-                        {/* Main Content */}
-                        <div className="flex-1 flex flex-col min-w-0">
-                            <header className="px-6 md:px-10 py-5 md:py-8 flex items-center justify-between border-b border-gray-100 dark:border-white/5">
-                                <div className="flex flex-col">
-                                    <h3 className="text-lg font-bold text-black dark:text-white leading-none mb-1">
-                                        {tabs.find(t => t.id === activeTab)?.label}
-                                    </h3>
-                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest md:hidden">Total Spend: ${totalUsage.totalCost.toFixed(4)}</p>
                                 </div>
                                 <button
                                     onClick={onClose}
-                                    className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full text-gray-400 hover:text-black dark:hover:text-white transition-all"
+                                    className="md:hidden p-2.5 hover:bg-white/10 rounded-full text-white/40 hover:text-white transition-all"
                                 >
                                     <X className="w-5 h-5" />
                                 </button>
-                            </header>
+                            </div>
 
-                            <main className="flex-1 overflow-y-auto p-6 md:p-10 custom-scrollbar">
+                            <nav className="flex md:flex-col overflow-x-auto md:overflow-y-auto gap-2 pb-2 md:pb-0 no-scrollbar touch-pan-x snap-x snap-mandatory flex-1 min-h-0">
+                                {tabs.map((tab) => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setActiveTab(tab.id)}
+                                        className={`flex-none md:w-full group flex items-center md:items-start gap-3 md:gap-4 p-3 md:p-4 rounded-xl md:rounded-2xl transition-all duration-300 snap-center ${activeTab === tab.id
+                                            ? 'bg-white text-black shadow-lg shadow-white/5'
+                                            : 'text-white/40 hover:text-white hover:bg-white/5'
+                                            }`}
+                                    >
+                                        <tab.icon className={`w-4 h-4 md:w-5 md:h-5 shrink-0 ${activeTab === tab.id ? 'text-black' : 'group-hover:text-white transition-colors'}`} />
+                                        <div className="text-left">
+                                            <div className="font-black text-xs md:text-sm whitespace-nowrap md:whitespace-normal">{tab.label}</div>
+                                            <div className="text-[9px] md:text-[10px] font-bold opacity-60 line-clamp-1 hidden md:block">{tab.description}</div>
+                                        </div>
+                                    </button>
+                                ))}
+                            </nav>
+                        </div>
+
+                        {/* Sidebar Badge */}
+                        <div className="mt-auto p-8 hidden md:block">
+                            <div className="p-6 bg-gradient-to-br from-zinc-800 to-zinc-900 rounded-3xl border border-white/5 relative overflow-hidden group">
+                                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+                                    <Globe className="w-12 h-12" />
+                                </div>
+                                <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] mb-2">Network Consumption</div>
+                                <div className="text-2xl font-black text-white italic tracking-tighter">
+                                    ${totalUsage.totalCost.toFixed(3)}
+                                </div>
+                                <div className="mt-4 flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                                    <span className="text-[9px] font-bold text-green-500 uppercase tracking-widest">Active System</span>
+                                </div>
+                            </div>
+                        </div>
+                    </aside>
+
+                    {/* MAIN CONTENT AREA */}
+                    <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-zinc-950 relative">
+                        {/* Header Header (Mobile hidden) / Current Tab Title (Desktop) */}
+                        <header className="px-8 py-8 hidden md:flex items-center justify-between sticky top-0 bg-zinc-950/80 backdrop-blur-md z-20">
+                            <div className="flex flex-col">
+                                <span className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em] mb-1">Configuration</span>
+                                <h3 className="text-2xl md:text-3xl font-black text-white tracking-tight">
+                                    {tabs.find(t => t.id === activeTab)?.label}
+                                </h3>
+                            </div>
+                            <button
+                                onClick={onClose}
+                                className="p-3 hover:bg-white/10 rounded-full text-white/40 hover:text-white transition-all transform hover:rotate-90"
+                            >
+                                <X className="w-6 h-6" />
+                            </button>
+                        </header>
+
+                        {/* Scrollable Content Container */}
+                        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                            <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 md:p-10 custom-scrollbar min-h-0 scroll-smooth">
                                 <AnimatePresence mode="wait">
                                     {activeTab === 'analytics' && (
                                         <motion.section
                                             key="analytics"
-                                            initial={{ opacity: 0, x: 20 }}
-                                            animate={{ opacity: 1, x: 0 }}
-                                            exit={{ opacity: 0, x: -20 }}
-                                            className="space-y-6"
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -10 }}
+                                            className="space-y-4"
                                         >
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                                                <div className="p-6 bg-white/[0.03] rounded-3xl border border-white/5">
+                                                    <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] mb-2">Prompt Tokens</div>
+                                                    <div className="text-3xl font-black text-white italic tracking-tighter">
+                                                        {totalUsage.promptTokens >= 1000000
+                                                            ? `${(totalUsage.promptTokens / 1000000).toFixed(2)}M`
+                                                            : `${(totalUsage.promptTokens / 1000).toFixed(1)}k`}
+                                                    </div>
+                                                </div>
+                                                <div className="p-6 bg-white/[0.03] rounded-3xl border border-white/5">
+                                                    <div className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] mb-2">Completion Tokens</div>
+                                                    <div className="text-3xl font-black text-white italic tracking-tighter">
+                                                        {totalUsage.completionTokens >= 1000000
+                                                            ? `${(totalUsage.completionTokens / 1000000).toFixed(2)}M`
+                                                            : `${(totalUsage.completionTokens / 1000).toFixed(1)}k`}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="text-xs font-black text-white/30 uppercase tracking-[0.2em] mb-6">Recent Heavy Queries</div>
                                             <div className="space-y-3">
                                                 {[...conversations]
-                                                    .filter(c => (c.totalUsage?.promptTokens || 0) > 0 || (c.totalUsage?.completionTokens || 0) > 0)
-                                                    .sort((a, b) => {
-                                                        const totalA = (a.totalUsage?.promptTokens || 0) + (a.totalUsage?.completionTokens || 0);
-                                                        const totalB = (b.totalUsage?.promptTokens || 0) + (b.totalUsage?.completionTokens || 0);
-                                                        return totalB - totalA;
-                                                    })
-                                                    .slice(0, 15)
-                                                    .map((conv, index) => {
-                                                        const total = (conv.totalUsage?.promptTokens || 0) + (conv.totalUsage?.completionTokens || 0);
-                                                        return (
-                                                            <div key={conv.id} className="flex items-center justify-between p-4 md:p-5 bg-gray-50 dark:bg-white/5 rounded-2xl md:rounded-3xl border border-gray-100 dark:border-white/5 group hover:border-blue-500/30 transition-all">
-                                                                <div className="flex items-center gap-3 md:gap-4 flex-1 min-w-0">
-                                                                    <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl md:rounded-2xl flex items-center justify-center text-[10px] md:text-xs font-black shrink-0 ${index === 0 ? 'bg-amber-100 text-amber-600 shadow-sm' :
-                                                                        index === 1 ? 'bg-gray-200 text-gray-600 shadow-sm' :
-                                                                            index === 2 ? 'bg-orange-100 text-orange-600 shadow-sm' :
-                                                                                'bg-white dark:bg-white/5 text-gray-400 border border-gray-100 dark:border-white/5'
-                                                                        }`}>
-                                                                        {index + 1}
-                                                                    </div>
-                                                                    <div className="min-w-0 flex-1">
-                                                                        <div className="text-xs md:text-sm font-bold text-black dark:text-white truncate pr-4">{conv.title || "Untitled Conversation"}</div>
-                                                                        <div className="text-[9px] md:text-[10px] text-gray-400 font-medium tracking-wide">{(new Date(conv.lastModified)).toLocaleDateString()}</div>
-                                                                    </div>
+                                                    .filter(c => (c.totalUsage?.totalCost || 0) > 0)
+                                                    .sort((a, b) => (b.totalUsage?.totalCost || 0) - (a.totalUsage?.totalCost || 0))
+                                                    .slice(0, 10)
+                                                    .map((conv, idx) => (
+                                                        <div key={conv.id} className="flex items-center justify-between p-5 bg-white/[0.02] hover:bg-white/[0.04] rounded-2xl border border-white/5 transition-all group">
+                                                            <div className="flex items-center gap-4 flex-1 min-w-0">
+                                                                <div className="w-10 h-10 rounded-xl bg-zinc-900 flex items-center justify-center text-xs font-black text-white/20 border border-white/5">
+                                                                    {idx + 1}
                                                                 </div>
-                                                                <div className="flex flex-col items-end gap-1">
-                                                                    <div className="text-sm md:text-[15px] font-black text-black dark:text-white">
-                                                                        {(total / 1000).toFixed(1)}k <span className="text-[9px] md:text-[10px] font-bold text-gray-400 uppercase tracking-widest">tkn</span>
-                                                                    </div>
-                                                                    <div className="text-[9px] md:text-[10px] font-bold text-blue-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                                                                        ${(conv.totalUsage?.totalCost || 0).toFixed(4)}
-                                                                    </div>
+                                                                <div className="min-w-0">
+                                                                    <div className="text-sm font-black text-white truncate pr-4">{conv.title || "Unknown Session"}</div>
+                                                                    <div className="text-[10px] font-bold text-white/30">ID: {conv.id.substring(0, 8)}...</div>
                                                                 </div>
                                                             </div>
-                                                        );
-                                                    })}
-
-                                                {conversations.filter(c => (c.totalUsage?.totalCost || 0) > 0).length === 0 && (
-                                                    <div className="text-center py-16 md:py-20 text-gray-400 text-xs md:text-sm font-medium italic bg-gray-50/50 dark:bg-white/[0.02] rounded-[2rem] md:rounded-[3rem] px-6">
-                                                        No resource data captured for your chats yet. Start a conversation to see rankings.
+                                                            <div className="text-right flex flex-col items-end">
+                                                                <div className="text-sm font-black text-blue-500 italic">${(conv.totalUsage?.totalCost || 0).toFixed(4)}</div>
+                                                                <div className="text-[9px] font-bold text-white/20 uppercase">Resource Cost</div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                {conversations.length === 0 && (
+                                                    <div className="py-20 text-center bg-white/[0.02] rounded-3xl border border-dashed border-white/10">
+                                                        <Activity className="w-8 h-8 text-white/10 mx-auto mb-4" />
+                                                        <p className="text-sm font-bold text-white/20 uppercase tracking-widest">No spectral data detected</p>
                                                     </div>
                                                 )}
                                             </div>
@@ -234,42 +256,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     {activeTab === 'models' && (
                                         <motion.section
                                             key="models"
-                                            initial={{ opacity: 0, x: 20 }}
-                                            animate={{ opacity: 1, x: 0 }}
-                                            exit={{ opacity: 0, x: -20 }}
-                                            className="grid grid-cols-1 gap-4"
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -10 }}
+                                            className="grid grid-cols-1 lg:grid-cols-2 gap-4"
                                         >
-                                            {Object.entries(modelUsage).map(([modelId, stats]) => (
-                                                <div key={modelId} className="p-5 md:p-6 bg-gray-50 dark:bg-white/5 rounded-2xl md:rounded-[2.5rem] border border-gray-100 dark:border-white/5">
-                                                    <div className="flex items-center justify-between mb-4 md:mb-6">
+                                            {Object.entries(modelUsage).map(([id, stats]) => (
+                                                <div key={id} className="p-8 bg-white/[0.03] rounded-[2.5rem] border border-white/5 flex flex-col">
+                                                    <div className="flex items-center justify-between mb-8">
                                                         <div className="flex items-center gap-3">
-                                                            <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl md:rounded-2xl bg-black dark:bg-white text-white dark:text-black flex items-center justify-center">
-                                                                <Zap size={16} className="md:w-5 md:h-5" />
+                                                            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg">
+                                                                <Zap className="w-5 h-5 text-black" />
                                                             </div>
-                                                            <div>
-                                                                <div className="text-[11px] md:text-sm font-black text-black dark:text-white uppercase tracking-tight truncate max-w-[120px] md:max-w-none">{modelId}</div>
-                                                                <div className="text-[8px] md:text-[10px] text-gray-400 font-bold uppercase tracking-widest">Active Model Instance</div>
-                                                            </div>
+                                                            <div className="text-sm font-black text-white uppercase tracking-tight">{id}</div>
                                                         </div>
-                                                        <div className="px-3 py-1.5 md:px-4 md:py-2 bg-blue-500 text-white rounded-lg md:rounded-xl text-[10px] md:text-xs font-black">
-                                                            ${stats.totalCost.toFixed(5)}
-                                                        </div>
+                                                        <div className="text-xl font-black text-blue-500 italic tracking-tighter">${stats.totalCost.toFixed(4)}</div>
                                                     </div>
-                                                    <div className="grid grid-cols-2 gap-3 md:gap-4">
-                                                        <div className="p-3 md:p-4 bg-white dark:bg-white/5 rounded-xl md:rounded-2xl border border-gray-100 dark:border-white/5">
-                                                            <div className="text-[8px] md:text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1">Input Volume</div>
-                                                            <div className="text-lg md:text-xl font-display font-black text-black dark:text-white">{(stats.promptTokens / 1000).toFixed(2)}k</div>
+
+                                                    <div className="space-y-4">
+                                                        <div className="flex justify-between items-end border-b border-white/5 pb-2">
+                                                            <span className="text-[10px] font-black text-white/30 uppercase tracking-widest">Input</span>
+                                                            <span className="text-sm font-black text-white">{(stats.promptTokens / 1000).toFixed(2)}k <span className="text-[9px] opacity-30">TKN</span></span>
                                                         </div>
-                                                        <div className="p-3 md:p-4 bg-white dark:bg-white/5 rounded-xl md:rounded-2xl border border-gray-100 dark:border-white/5">
-                                                            <div className="text-[8px] md:text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1">Output Volume</div>
-                                                            <div className="text-lg md:text-xl font-display font-black text-black dark:text-white">{(stats.completionTokens / 1000).toFixed(2)}k</div>
+                                                        <div className="flex justify-between items-end border-b border-white/5 pb-2">
+                                                            <span className="text-[10px] font-black text-white/30 uppercase tracking-widest">Output</span>
+                                                            <span className="text-sm font-black text-white">{(stats.completionTokens / 1000).toFixed(2)}k <span className="text-[9px] opacity-30">TKN</span></span>
                                                         </div>
                                                     </div>
                                                 </div>
                                             ))}
                                             {Object.keys(modelUsage).length === 0 && (
-                                                <div className="text-center py-20 text-gray-400 text-xs md:text-sm font-medium italic bg-gray-50/50 dark:bg-white/[0.02] rounded-[2rem] md:rounded-[3rem] px-6">
-                                                    No model breakdown available yet.
+                                                <div className="col-span-full py-20 text-center bg-white/[0.02] rounded-[2.5rem] border border-dashed border-white/10">
+                                                    <Zap className="w-8 h-8 text-white/10 mx-auto mb-4" />
+                                                    <p className="text-sm font-bold text-white/20 uppercase tracking-widest">Awaiting engine performance data</p>
                                                 </div>
                                             )}
                                         </motion.section>
@@ -278,48 +297,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     {activeTab === 'keys' && (
                                         <motion.section
                                             key="keys"
-                                            initial={{ opacity: 0, x: 20 }}
-                                            animate={{ opacity: 1, x: 0 }}
-                                            exit={{ opacity: 0, x: -20 }}
-                                            className="space-y-6 md:space-y-8"
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -10 }}
+                                            className="space-y-6"
                                         >
-                                            <div className="grid grid-cols-1 gap-5 md:gap-6">
+                                            <div className="p-6 bg-blue-500/10 rounded-2xl border border-blue-500/20 mb-8 flex items-start gap-4">
+                                                <Lock className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                                                <div>
+                                                    <p className="text-xs font-bold text-white leading-relaxed">Keys are encrypted and stored locally. Never shared with central servers.</p>
+                                                    <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mt-2">End-to-End Governance Active</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-4">
                                                 {(['google', 'openai', 'anthropic', 'deepseek'] as const).map(provider => {
                                                     const error = validationErrors[provider];
                                                     const isVerified = verifiedProviders.has(provider);
-                                                    const link = API_LINKS[provider];
-
                                                     return (
-                                                        <div key={provider} className="relative group">
-                                                            <div className="flex items-center justify-between mb-2 px-1">
-                                                                <label className="text-[10px] md:text-[11px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">
-                                                                    {provider} Key
-                                                                </label>
-                                                                <a
-                                                                    href={link.url}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="text-[9px] md:text-[10px] font-bold text-blue-500 flex items-center gap-1 hover:underline tracking-tight"
-                                                                >
-                                                                    Get Key <ExternalLink className="w-2 md:w-2.5 h-2 md:h-2.5" />
+                                                        <div key={provider} className="group flex flex-col gap-2">
+                                                            <div className="flex items-center justify-between px-1">
+                                                                <div className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em]">{provider} gateway</div>
+                                                                <a href={API_LINKS[provider].url} target="_blank" rel="noreferrer" className="text-[9px] font-black text-blue-500 hover:text-blue-400 flex items-center gap-1 transition-colors uppercase tracking-widest">
+                                                                    Provision Key <ExternalLink className="w-2.5 h-2.5" />
                                                                 </a>
                                                             </div>
-                                                            <div className="relative">
+                                                            <div className="relative group/input">
                                                                 <input
                                                                     type="password"
-                                                                    value={customKeys[provider]}
-                                                                    placeholder={`••••••••••••••••`}
+                                                                    value={customKeys[provider] || ''}
                                                                     onChange={(e) => setCustomKeys({ ...customKeys, [provider]: e.target.value })}
-                                                                    className={`w-full bg-gray-50 dark:bg-white/5 border-none rounded-xl md:rounded-2xl px-5 md:px-6 py-3.5 md:py-4.5 text-xs md:text-sm font-mono transition-all
-                                                                    ${error ? 'ring-2 ring-red-500/20' : 'focus:ring-2 focus:ring-black dark:focus:ring-white'}
+                                                                    placeholder="Enter cryptographic key..."
+                                                                    className={`w-full bg-zinc-900 border border-white/5 rounded-2xl px-6 py-5 text-sm font-mono text-white placeholder:text-white/10 focus:outline-none focus:border-white/20 focus:bg-zinc-800 transition-all shadow-inner
+                                                                    ${error ? 'border-red-500/50 bg-red-500/5' : ''}
                                                                 `}
                                                                 />
-                                                                <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                                                                    {isVerified && <Check className="w-4 h-4 md:w-5 md:h-5 text-green-500" />}
-                                                                    {error && <XCircle className="w-4 h-4 md:w-5 md:h-5 text-red-500" />}
+                                                                <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                                                                    {isVerified && <Check className="w-5 h-5 text-green-500 drop-shadow-[0_0_8px_rgba(34,197,94,0.5)]" />}
+                                                                    {error && <XCircle className="w-5 h-5 text-red-500 animate-pulse" />}
                                                                 </div>
                                                             </div>
-                                                            {error && <p className="text-[9px] md:text-[10px] text-red-500 mt-2 ml-1 font-medium italic">{error}</p>}
+                                                            {error && <span className="text-[9px] font-black text-red-500 uppercase ml-1 tracking-widest">{error}</span>}
                                                         </div>
                                                     );
                                                 })}
@@ -327,41 +345,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         </motion.section>
                                     )}
                                 </AnimatePresence>
-                            </main>
-
-                            {/* Footer */}
-                            <footer className="p-6 md:p-10 pt-4 md:pt-6 border-t border-gray-100 dark:border-white/5 bg-white/50 dark:bg-zinc-950/50">
-                                <div className="flex gap-3 md:gap-4">
-                                    <button
-                                        onClick={onClose}
-                                        className="px-4 md:px-8 py-3 md:py-4 rounded-xl md:rounded-2xl font-bold text-gray-400 hover:text-black dark:hover:text-white transition-all text-xs md:text-sm"
-                                    >
-                                        Close
-                                    </button>
-                                    <button
-                                        onClick={handleSave}
-                                        disabled={isVerifying}
-                                        className="flex-1 py-3.5 md:py-4.5 px-6 md:px-10 bg-black dark:bg-white text-white dark:text-black rounded-2xl md:rounded-3xl font-bold text-xs md:text-sm shadow-xl md:shadow-2xl shadow-black/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 md:gap-3"
-                                    >
-                                        {isVerifying ? (
-                                            <>
-                                                <Loader2 className="w-3.5 h-3.5 md:w-4 md:h-4 animate-spin" />
-                                                <span>Verifying...</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Check className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                                                <span>Save All Changes</span>
-                                            </>
-                                        )}
-                                    </button>
-                                </div>
-                            </footer>
+                            </div>
                         </div>
-                    </motion.div>
-                </div>
-            )}
+
+                        {/* STICKY FOOTER */}
+                        <footer className="shrink-0 px-6 md:px-8 py-5 md:py-8 border-t border-white/5 bg-zinc-950/90 backdrop-blur-xl flex flex-col-reverse sm:flex-row items-center gap-4 mt-auto">
+                            <button
+                                onClick={onClose}
+                                className="w-full sm:w-auto px-8 py-4 text-xs font-black text-white/40 hover:text-white uppercase tracking-widest transition-colors"
+                            >
+                                Release Changes
+                            </button>
+                            <button
+                                onClick={handleSave}
+                                disabled={isVerifying}
+                                className="w-full sm:flex-1 bg-white text-black px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-[0_20px_40px_rgba(255,255,255,0.1)] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+                            >
+                                {isVerifying ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        <span>Cryptographic Verification...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Check className="w-4 h-4" />
+                                        <span>Synchronize Preferences</span>
+                                    </>
+                                )}
+                            </button>
+                        </footer>
+                    </main>
+                </motion.div>
+            </div>
         </AnimatePresence>
     );
 };
-

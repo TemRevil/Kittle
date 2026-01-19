@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+/* تحديد مسارات الملفات */
+@source "../App.tsx";
+@source "../components/**/*.{ts,tsx}";
+@source "../services/**/*.{ts,tsx}";
+@source "./**/*.{ts,tsx}";
+
+/* تفعيل دعم كلاس .dark في Tailwind v4 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Outfit', sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
+
+  /* الألوان الديناميكية */
+  --color-paper: var(--bg-paper);
+  --color-ink: var(--text-ink);
+  --color-subtle: var(--bg-subtle);
+  --color-border: var(--border-color);
+
+  --transition-base: 0.2s ease-in-out;
+}
+
+:root {
+  --bg-paper: #ffffff;
+  --text-ink: #000000;
+  --bg-subtle: #f9f9f9;
+  --border-color: #eeeeee;
+}
+
+.dark {
+  --bg-paper: #000000;
+  --text-ink: #ffffff;
+  --bg-subtle: #09090b;
+  --border-color: #1a1a1a;
+}
+
+@layer base {
+  html {
+    background-color: var(--bg-paper);
+    color: var(--text-ink);
+  }
+
+  body {
+    background-color: var(--bg-paper);
+    color: var(--text-ink);
+    transition: background-color var(--transition-base), color var(--transition-base);
+  }
+
+  /* ربط Tailwind بالألوان المتغيرة */
+  .bg-white {
+    background-color: var(--bg-paper);
+  }
+
+  .bg-black {
+    background-color: var(--bg-paper);
+  }
+
+  .text-black {
+    color: var(--text-ink);
+  }
+
+  .text-white {
+    color: var(--text-ink);
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 10px;
+}

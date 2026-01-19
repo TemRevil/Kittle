@@ -1,18 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { LLMConfig, LLMProvider, AVAILABLE_MODELS } from '../types';
-import { Zap, Key, Check, ChevronRight, Shield, Cpu, ArrowRight, XCircle } from 'lucide-react';
-import anime from 'animejs';
+import React, { useState } from 'react';
+import { LLMConfig, LLMProvider } from '../types';
+import { Key, Check, ArrowRight, XCircle, ExternalLink, Loader2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { verifyKey } from '../services/keyVerification';
 
 interface GatewayProps {
   initialConfig: LLMConfig;
   onComplete: (config: LLMConfig) => void;
 }
 
-// Validation logic
-const isValidKey = (provider: string, key: string) => {
+// Validation logic (Basic Format Check)
+const isValidKeyFormat = (provider: string, key: string) => {
   if (!key || key.trim() === '') return false;
   const trimmed = key.trim();
-  
+
   switch (provider) {
     case 'google':
       return trimmed.startsWith('AIza') && trimmed.length > 30;
@@ -27,213 +28,206 @@ const isValidKey = (provider: string, key: string) => {
   }
 };
 
+// API Key links
+const API_LINKS: Record<LLMProvider, { url: string; label: string }> = {
+  google: { url: 'https://aistudio.google.com/apikey', label: 'Google AI' },
+  openai: { url: 'https://platform.openai.com/api-keys', label: 'OpenAI Platform' },
+  anthropic: { url: 'https://console.anthropic.com/settings/keys', label: 'Anthropic Console' },
+  deepseek: { url: 'https://platform.deepseek.com/api_keys', label: 'DeepSeek Platform' }
+};
+
 export const Gateway: React.FC<GatewayProps> = ({ initialConfig, onComplete }) => {
-  const [mode, setMode] = useState<'selection' | 'custom'>('selection');
   const [customKeys, setCustomKeys] = useState(initialConfig.apiKeys);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [verifiedProviders, setVerifiedProviders] = useState<Set<string>>(new Set());
 
-  // Entrance Animation
-  useEffect(() => {
-    // Reset initial state for animation
-    const elements = document.querySelectorAll('.gateway-entry');
-    anime.set(elements, { opacity: 0, translateY: 30, scale: 0.95 });
+  const handleStart = async () => {
+    setIsVerifying(true);
+    setValidationErrors({});
+    const newVerified = new Set<string>();
+    let firstValidProvider: LLMProvider | null = null;
+    let errors: Record<string, string> = {};
 
-    anime({
-      targets: '.gateway-entry',
-      translateY: [30, 0],
-      scale: [0.95, 1],
-      opacity: [0, 1],
-      delay: anime.stagger(150),
-      easing: 'spring(1, 80, 10, 0)', // Spring physics for "mood" selection feel
-      duration: 1200
-    });
-  }, [mode]);
+    const providersToCheck = (['google', 'openai', 'anthropic', 'deepseek'] as LLMProvider[])
+      .filter(p => isValidKeyFormat(p, customKeys[p]));
 
-  const handleFreeStart = () => {
-    // Reset to Google default with env key
-    const newConfig: LLMConfig = {
-      ...initialConfig,
-      provider: 'google',
-      model: 'gemini-2.0-flash-thinking-exp',
-      apiKeys: {
-        ...initialConfig.apiKeys,
-        google: (process.env.API_KEY as string) || ''
+    await Promise.all(providersToCheck.map(async (provider) => {
+      const key = customKeys[provider];
+      const result = await verifyKey(provider, key);
+
+      if (result.isValid) {
+        newVerified.add(provider);
+        if (!firstValidProvider) firstValidProvider = provider;
+      } else {
+        errors[provider] = result.error || "Authorization failed";
       }
-    };
-    exitAnimation(() => onComplete(newConfig));
-  };
+    }));
 
-  const handleCustomStart = () => {
-    // Determine provider based on which keys are present AND valid
-    let provider: LLMProvider = 'google';
-    let model = 'gemini-2.0-flash-thinking-exp';
+    setVerifiedProviders(newVerified);
+    setValidationErrors(errors);
+    setIsVerifying(false);
 
-    if (isValidKey('openai', customKeys.openai)) {
-      provider = 'openai';
-      model = 'gpt-4o';
-    } else if (isValidKey('anthropic', customKeys.anthropic)) {
-      provider = 'anthropic';
-      model = 'claude-3-5-sonnet-latest';
-    } else if (isValidKey('deepseek', customKeys.deepseek)) {
-      provider = 'deepseek';
-      model = 'deepseek-reasoner';
-    } else if (isValidKey('google', customKeys.google)) {
-      provider = 'google';
-      model = 'gemini-2.0-flash-thinking-exp';
+    if (firstValidProvider && Object.keys(errors).length === 0) {
+      // Determine default model based on provider
+      let model = 'gemini-2.0-flash-exp';
+      if (firstValidProvider === 'openai') model = 'gpt-4o';
+      if (firstValidProvider === 'anthropic') model = 'claude-3-5-sonnet-latest';
+      if (firstValidProvider === 'deepseek') model = 'deepseek-reasoner';
+
+      const newConfig: LLMConfig = {
+        provider: firstValidProvider,
+        model,
+        apiKeys: customKeys
+      };
+
+      // Delay slightly to show success state
+      setTimeout(() => {
+        onComplete(newConfig);
+      }, 500);
     }
-
-    const newConfig: LLMConfig = {
-      provider,
-      model,
-      apiKeys: customKeys
-    };
-    exitAnimation(() => onComplete(newConfig));
   };
 
-  const exitAnimation = (cb: () => void) => {
-    anime({
-      targets: containerRef.current,
-      opacity: [1, 0],
-      scale: [1, 0.9],
-      filter: ['blur(0px)', 'blur(10px)'],
-      duration: 600,
-      easing: 'easeOutExpo',
-      complete: cb
-    });
-  };
-
-  // Check if at least one key is valid
-  const hasValidKey = Object.entries(customKeys).some(([provider, key]) => isValidKey(provider, key as string));
+  // Check if at least one key matches the basic format
+  const hasFormatValidKey = Object.entries(customKeys).some(([provider, key]) => isValidKeyFormat(provider, key as string));
 
   return (
-    <div className="fixed inset-0 z-[100] bg-white dark:bg-black flex items-center justify-center p-6 transition-colors duration-500">
-      <div ref={containerRef} className="max-w-4xl w-full">
-        
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, scale: 0.95, filter: 'blur(10px)' }}
+      transition={{ duration: 0.6 }}
+      className="fixed inset-0 z-[100] bg-white dark:bg-black flex items-center justify-center p-6 transition-colors duration-500"
+    >
+      <div className="max-w-xl w-full">
         {/* Header */}
-        <div className="text-center mb-16 gateway-entry">
-          <h1 className="text-6xl md:text-7xl font-display font-bold text-black dark:text-white mb-6 tracking-tighter">
-            CodeCleanse AI
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="text-center mb-12"
+        >
+          <h1 className="text-5xl md:text-6xl font-display font-bold text-black dark:text-white mb-4 tracking-tighter">
+            Kittle
           </h1>
-          <p className="text-gray-400 text-xl font-medium max-w-lg mx-auto leading-relaxed">
-            Select your reasoning engine.
+          <p className="text-gray-400 text-lg font-medium max-w-md mx-auto leading-relaxed">
+            Enter your API key to get started with AI-powered code analysis.
           </p>
-        </div>
+        </motion.div>
 
-        {mode === 'selection' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
-            {/* Free Option */}
-            <button 
-              onClick={handleFreeStart}
-              className="gateway-entry group relative p-8 rounded-[2rem] bg-gray-50 dark:bg-zinc-900 border-2 border-transparent hover:border-blue-500/20 dark:hover:border-blue-500/30 transition-all text-left hover:scale-[1.02] active:scale-[0.98] duration-300"
-            >
-              <div className="absolute top-8 right-8 p-3 rounded-full bg-white dark:bg-black group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">
-                <ArrowRight className="w-5 h-5" />
-              </div>
-              
-              <div className="w-16 h-16 rounded-2xl bg-blue-500/10 flex items-center justify-center mb-8 group-hover:bg-blue-500/20 transition-colors">
-                <Zap className="w-8 h-8 text-blue-600 dark:text-blue-400" />
-              </div>
-              
-              <h3 className="text-3xl font-display font-bold text-black dark:text-white mb-3">
-                Standard
-              </h3>
-              <p className="text-gray-500 font-medium leading-relaxed mb-8">
-                Instant access via Gemini Flash Thinking. Optimized for speed and code auditing.
-              </p>
-              
-              <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-widest text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                <Shield className="w-4 h-4" /> Free Access
-              </div>
-            </button>
+        {/* API Keys Form */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, type: "spring", stiffness: 100, damping: 15 }}
+          className="bg-white dark:bg-black border border-gray-100 dark:border-zinc-800 p-8 md:p-10 rounded-[2rem] shadow-2xl shadow-gray-200/50 dark:shadow-none relative overflow-hidden"
+        >
+          {/* Background Decoration */}
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-gray-100 to-transparent dark:from-zinc-900/50 rounded-bl-full -mr-16 -mt-16 pointer-events-none"></div>
 
-            {/* Custom Option */}
-            <button 
-              onClick={() => setMode('custom')}
-              className="gateway-entry group relative p-8 rounded-[2rem] bg-white dark:bg-black border-2 border-gray-100 dark:border-zinc-800 hover:border-purple-500/20 dark:hover:border-purple-500/30 transition-all text-left hover:scale-[1.02] active:scale-[0.98] duration-300 shadow-2xl shadow-gray-200/50 dark:shadow-none"
-            >
-               <div className="absolute top-8 right-8 p-3 rounded-full bg-gray-50 dark:bg-zinc-800 group-hover:bg-purple-600 group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-black transition-all">
-                <ChevronRight className="w-5 h-5" />
-              </div>
-
-              <div className="w-16 h-16 rounded-2xl bg-purple-500/10 flex items-center justify-center mb-8 group-hover:bg-purple-500/20 transition-colors">
-                <Key className="w-8 h-8 text-purple-600 dark:text-purple-400" />
-              </div>
-              
-              <h3 className="text-3xl font-display font-bold text-black dark:text-white mb-3">
-                BYO Keys
-              </h3>
-              <p className="text-gray-500 font-medium leading-relaxed mb-8">
-                Configure OpenAI, Anthropic, or DeepSeek for specialized reasoning tasks.
-              </p>
-              
-              <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-widest text-gray-400 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
-                <Cpu className="w-4 h-4" /> Custom API
-              </div>
-            </button>
+          <div className="flex items-center gap-3 mb-8 relative z-10">
+            <div className="p-3 rounded-xl bg-black dark:bg-white">
+              <Key className="w-5 h-5 text-white dark:text-black" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold font-display text-black dark:text-white">API Configuration</h3>
+              <p className="text-xs text-gray-400 font-medium">Add at least one API key to continue</p>
+            </div>
           </div>
-        ) : (
-          <div className="max-w-xl mx-auto gateway-entry bg-white dark:bg-black border border-gray-100 dark:border-zinc-800 p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
-             
-             {/* Background Decoration */}
-             <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-gray-100 to-transparent dark:from-zinc-900/50 rounded-bl-full -mr-16 -mt-16 pointer-events-none"></div>
 
-             <div className="flex items-center justify-between mb-10 relative z-10">
-               <h3 className="text-2xl font-bold font-display text-black dark:text-white">API Configuration</h3>
-               <button 
-                  onClick={() => setMode('selection')} 
-                  className="px-4 py-2 rounded-full bg-gray-100 dark:bg-zinc-900 text-xs font-bold text-gray-500 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-all"
-               >
-                 Go Back
-               </button>
-             </div>
+          <div className="space-y-5 mb-8 relative z-10">
+            {(['google', 'openai', 'anthropic', 'deepseek'] as const).map(provider => {
+              const key = customKeys[provider];
+              const formatValid = isValidKeyFormat(provider, key);
+              const hasValue = key.length > 0;
+              const link = API_LINKS[provider];
+              const isVerified = verifiedProviders.has(provider);
+              const error = validationErrors[provider];
 
-             <div className="space-y-6 mb-10 relative z-10">
-               {(['google', 'openai', 'anthropic', 'deepseek'] as const).map(provider => {
-                 const key = customKeys[provider];
-                 const valid = isValidKey(provider, key);
-                 const hasValue = key.length > 0;
-
-                 return (
-                   <div key={provider} className="group">
-                     <div className="flex items-center justify-between mb-2 pl-1">
-                        <label className={`text-[11px] font-bold uppercase tracking-widest transition-colors ${hasValue ? (valid ? 'text-green-500' : 'text-red-500') : 'text-gray-400'}`}>
-                          {provider}
-                        </label>
-                        {valid && <Check className="w-3 h-3 text-green-500 animate-in zoom-in" />}
-                        {hasValue && !valid && <XCircle className="w-3 h-3 text-red-500 animate-in zoom-in" />}
-                     </div>
-                     <input 
-                        type="password"
-                        placeholder={provider === 'google' ? 'AIza...' : 'sk-...'}
-                        value={customKeys[provider]}
-                        onChange={(e) => setCustomKeys({...customKeys, [provider]: e.target.value})}
-                        className={`w-full px-5 py-4 rounded-2xl bg-gray-50 dark:bg-zinc-900 border focus:bg-white dark:focus:bg-black outline-none transition-all font-mono text-sm
-                           ${hasValue && !valid 
-                             ? 'border-red-200 dark:border-red-900/50 text-red-600 focus:ring-4 focus:ring-red-50 dark:focus:ring-red-900/20' 
-                             : 'border-transparent focus:border-gray-200 dark:focus:border-zinc-700 focus:ring-4 focus:ring-gray-100 dark:focus:ring-zinc-800'}
-                        `}
-                     />
-                     {hasValue && !valid && (
-                       <p className="text-[10px] text-red-500 mt-1.5 ml-1 font-medium">
-                         Invalid key format. Should start with {provider === 'google' ? 'AIza' : 'sk-'}.
-                       </p>
-                     )}
-                   </div>
-                 );
-               })}
-             </div>
-
-             <button 
-               onClick={handleCustomStart}
-               disabled={!hasValidKey}
-               className="relative z-10 w-full py-5 bg-black dark:bg-white text-white dark:text-black rounded-2xl font-bold text-lg hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-xl flex items-center justify-center gap-3"
-             >
-               Launch Workspace <ArrowRight className="w-5 h-5" />
-             </button>
+              return (
+                <div key={provider} className="group">
+                  <div className="flex items-center justify-between mb-2 pl-1">
+                    <div className="flex items-center gap-2">
+                      <label className={`text-[11px] font-bold uppercase tracking-widest transition-colors ${hasValue
+                        ? (error ? 'text-red-500' : (isVerified ? 'text-green-500' : 'text-gray-600 dark:text-gray-300'))
+                        : 'text-gray-400'
+                        }`}>
+                        {provider}
+                      </label>
+                      {isVerified && <Check className="w-3 h-3 text-green-500 animate-in zoom-in" />}
+                      {error && <XCircle className="w-3 h-3 text-red-500 animate-in zoom-in" />}
+                    </div>
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-[10px] font-bold text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 transition-colors uppercase tracking-wide"
+                    >
+                      Get Key <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                  </div>
+                  <input
+                    type="password"
+                    placeholder={provider === 'google' ? 'AIza...' : 'sk-...'}
+                    value={customKeys[provider]}
+                    onChange={(e) => {
+                      setCustomKeys({ ...customKeys, [provider]: e.target.value });
+                      // Clear errors/verification status on change
+                      if (validationErrors[provider]) {
+                        const newErrors = { ...validationErrors };
+                        delete newErrors[provider];
+                        setValidationErrors(newErrors);
+                      }
+                      if (verifiedProviders.has(provider)) {
+                        const newVerified = new Set(verifiedProviders);
+                        newVerified.delete(provider);
+                        setVerifiedProviders(newVerified);
+                      }
+                    }}
+                    className={`w-full px-5 py-4 rounded-2xl bg-gray-50 dark:bg-zinc-900 border focus:bg-white dark:focus:bg-black outline-none transition-all font-mono text-sm
+                         ${error
+                        ? 'border-red-200 dark:border-red-900/50 text-red-600 focus:ring-4 focus:ring-red-50 dark:focus:ring-red-900/20'
+                        : (isVerified
+                          ? 'border-green-200 dark:border-green-900/30 ring-1 ring-green-100 dark:ring-green-900/20'
+                          : 'border-transparent focus:border-gray-200 dark:focus:border-zinc-700 focus:ring-4 focus:ring-gray-100 dark:focus:ring-zinc-800')}
+                      `}
+                  />
+                  {error && (
+                    <p className="text-[10px] text-red-500 mt-1.5 ml-1 font-medium animate-in slide-in-from-top-1">
+                      {error}
+                    </p>
+                  )}
+                  {hasValue && !formatValid && !error && (
+                    <p className="text-[10px] text-orange-500 mt-1.5 ml-1 font-medium">
+                      Invalid format. Expecting {provider === 'google' ? 'AIza...' : 'sk-...'}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        )}
-        
+
+          <button
+            onClick={handleStart}
+            disabled={!hasFormatValidKey || isVerifying}
+            className="relative z-10 w-full py-5 bg-black dark:bg-white text-white dark:text-black rounded-2xl font-bold text-lg hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-xl flex items-center justify-center gap-3"
+          >
+            {isVerifying ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" /> Verifying Keys...
+              </>
+            ) : (
+              <>
+                Launch Workspace <ArrowRight className="w-5 h-5" />
+              </>
+            )}
+          </button>
+
+          <p className="text-center text-[10px] text-gray-400 mt-4 font-medium">
+            Your API keys are stored locally and never sent to our servers.
+          </p>
+        </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 };

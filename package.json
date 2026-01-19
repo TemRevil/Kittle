@@ -1,28 +1,38 @@
 {
-  "name": "codecleanse-ai",
+  "name": "kittle",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
   "dependencies": {
-    "react-dom": "^19.2.3",
-    "react": "^19.2.3",
-    "lucide-react": "^0.562.0",
     "@google/genai": "^1.37.0",
-    "react-markdown": "^10.1.0",
-    "jszip": "3.10.1",
+    "@tailwindcss/postcss": "^4.1.18",
+    "framer-motion": "^12.27.0",
     "js-yaml": "4.1.0",
-    "xlsx": "0.18.5",
+    "jszip": "3.10.1",
+    "lucide-react": "^0.562.0",
+    "mermaid": "^11.12.2",
+    "motion": "^12.27.0",
+    "next": "^16.1.3",
     "pdfjs-dist": "3.11.174",
-    "animejs": "3.2.2"
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "react-markdown": "^10.1.0",
+    "xlsx": "0.18.5"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/react": "^19.2.8",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.23",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

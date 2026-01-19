@@ -4,16 +4,22 @@ import { ChatArea } from './components/ChatArea';
 import { RepoModal } from './components/RepoModal';
 import { ModelSelector } from './components/ModelSelector';
 import { Gateway } from './components/Gateway';
-import { FileContext, ChatState, Message, RepoDetails, LLMConfig, AVAILABLE_MODELS } from './types';
+import { FileContext, ChatState, Message, RepoDetails, LLMConfig, AVAILABLE_MODELS, LLMProvider } from './types';
 import { readFile } from './utils';
 import { streamLLMResponse } from './services/llmFactory';
 import { fetchRepoDetails, fetchRepoStructure, fetchGithubFileContent } from './services/githubService';
-import { Paperclip, Menu, X, ArrowUp, Loader2, Globe, Layers, Zap, Eye, EyeOff, ChevronDown, Check } from 'lucide-react';
-import anime from 'animejs';
+import { verifyKey } from './services/keyVerification';
+import { Paperclip, Menu, X, ArrowUp, Loader2, Globe, Layers, Zap, Eye, EyeOff, ChevronDown, Check, BrainCircuit } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 const App: React.FC = () => {
+  const [mounted, setMounted] = useState(false);
   const [isOnboarding, setIsOnboarding] = useState(true);
-  
+  const [isInitializing, setIsInitializing] = useState(true);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const [state, setState] = useState<ChatState>({
     messages: [],
     isLoading: false,
@@ -23,19 +29,25 @@ const App: React.FC = () => {
     repoDetails: null,
     thinkingMode: 'concise',
     isSearchEnabled: false,
-    showThinking: true, // Default to showing thoughts
+    isDesignMode: false,
+    showThinking: true,
+    currentConversationId: null,
+    conversations: [],
+    keyCapabilities: {
+      google: { discoveredModels: [] }
+    },
     llmConfig: {
       provider: 'google',
-      model: 'gemini-2.0-flash-thinking-exp',
+      model: 'gemini-2.0-flash-exp',
       apiKeys: {
-        google: process.env.API_KEY || '',
+        google: process.env.NEXT_PUBLIC_API_KEY || '',
         openai: '',
         anthropic: '',
         deepseek: ''
       }
     }
   });
-  
+
   const [input, setInput] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDark, setIsDark] = useState(false);
@@ -47,51 +59,184 @@ const App: React.FC = () => {
   const [isRepoLoading, setIsRepoLoading] = useState(false);
 
   // --- DERIVED STATE FOR THINKING CAPABILITY ---
-  // 1. Get current model definition
+  // 1. Get current model definition (check both hardcoded and discovered models)
   const currentModelDef = AVAILABLE_MODELS[state.llmConfig.provider]?.find(m => m.id === state.llmConfig.model);
-  
-  // 2. Check if it explicitly supports thinking (from types.ts or string match)
+  const discoveredModelDef = state.keyCapabilities?.[state.llmConfig.provider]?.discoveredModels?.find((m: any) => m.id === state.llmConfig.model);
+
+  // 2. Check if it explicitly supports thinking (from types.ts, discovered, or string match)
   const supportsThinking = !!(
-    currentModelDef?.hasThinking || 
-    state.llmConfig.model.includes('thinking') || 
-    state.llmConfig.model.includes('reasoner') || 
+    currentModelDef?.hasThinking ||
+    discoveredModelDef?.hasThinking ||
+    state.llmConfig.model.includes('gemini-2.5') ||
+    state.llmConfig.model.includes('gemini-3') ||
+    state.llmConfig.model.includes('thinking') ||
+    state.llmConfig.model.includes('reasoner') ||
+    state.llmConfig.model.includes('think') ||
+    state.llmConfig.model.includes('deep') ||
     state.llmConfig.model.includes('o1')
   );
-  
+
+  // 2.5 Check if model supports visual diagram generation
+  const capableVisualModels = ['gemini', 'gpt-4', 'claude-3', 'sonnet', 'opus', 'o1', 'deepseek', 'f1'];
+  const supportsVisuals = capableVisualModels.some(m => state.llmConfig.model.toLowerCase().includes(m));
+
   // 3. "Free Version" check (using default google env key)
-  const isFreeVersion = state.llmConfig.provider === 'google' && state.llmConfig.apiKeys.google === process.env.API_KEY;
+  const isFreeVersion = state.llmConfig.provider === 'google' && state.llmConfig.apiKeys.google === process.env.NEXT_PUBLIC_API_KEY;
 
   // Initialization Logic
+  // Initialization Logic
   useEffect(() => {
-    // Check if user has already set up the app
-    const setupComplete = localStorage.getItem('app_setup_complete');
-    const savedKeys = localStorage.getItem('llm_api_keys');
+    const initApp = async () => {
+      const setupComplete = localStorage.getItem('app_setup_complete');
+      const savedKeysStr = localStorage.getItem('llm_api_keys');
+      const savedConversations = localStorage.getItem('chat_history');
 
-    if (setupComplete) {
-      setIsOnboarding(false);
-      if (savedKeys) {
+      let currentKeys = { ...state.llmConfig.apiKeys };
+
+      // 1. Try to load saved keys
+      if (savedKeysStr) {
         try {
-          const parsedKeys = JSON.parse(savedKeys);
+          const parsedKeys = JSON.parse(savedKeysStr);
+          currentKeys = { ...currentKeys, ...parsedKeys };
+
+          // Update state with loaded keys immediately
           setState(prev => ({
             ...prev,
-            llmConfig: { ...prev.llmConfig, apiKeys: { ...prev.llmConfig.apiKeys, ...parsedKeys } }
+            llmConfig: { ...prev.llmConfig, apiKeys: currentKeys }
           }));
         } catch (e) {
           console.error("Failed to parse saved keys");
         }
       }
-    }
+
+      // 2. Verify keys before unlocking app
+      if (setupComplete) {
+        const providers: LLMProvider[] = ['google', 'openai', 'anthropic', 'deepseek'];
+        let allProvidedKeysValid = true;
+        let atLeastOneKey = false;
+
+        // Check ALL provided keys
+        for (const provider of providers) {
+          const key = currentKeys[provider];
+
+          if (key && key.trim().length > 0) {
+            atLeastOneKey = true;
+            if (key.length > 20) {
+              const result = await verifyKey(provider, key);
+              if (!result.isValid) {
+                console.warn(`Key for ${provider} is invalid.`);
+                allProvidedKeysValid = false;
+              }
+            } else {
+              allProvidedKeysValid = false;
+            }
+          }
+        }
+
+        // Must have at least one key, AND all provided keys must be valid
+        if (atLeastOneKey && allProvidedKeysValid) {
+          setIsOnboarding(false);
+
+          // Load conversations only if authorized
+          if (savedConversations) {
+            try {
+              const parsed = JSON.parse(savedConversations);
+              setState(prev => ({ ...prev, conversations: parsed }));
+            } catch (e) {
+              console.error("Failed to parse conversations");
+            }
+          }
+        } else {
+          // If stored keys are invalid or missing, force re-auth
+          console.warn("Invalid or missing keys detected on startup, forcing onboarding.");
+          setIsOnboarding(true);
+        }
+      }
+
+      setIsInitializing(false);
+    };
+
+    initApp();
   }, []);
 
-  // Migration/Fix for deprecated model ID if user has it stuck in state
+  // Save conversations to localStorage
   useEffect(() => {
-    // Fix for the 404 error by migrating to the generic alias
-    if (state.llmConfig.model === 'gemini-2.0-flash-thinking-exp-01-21') {
-       setState(prev => ({
-         ...prev,
-         llmConfig: { ...prev.llmConfig, model: 'gemini-2.0-flash-thinking-exp' }
-       }));
+    localStorage.setItem('chat_history', JSON.stringify(state.conversations));
+  }, [state.conversations]);
+
+  // Sync current state to currentConversationId in memory
+  useEffect(() => {
+    if (!state.currentConversationId || state.isLoading) return;
+
+    setState(prev => {
+      const existing = prev.conversations.find(c => c.id === prev.currentConversationId);
+      if (!existing) return prev;
+
+      // Update the stored conversation with latest state
+      const updatedConversations = prev.conversations.map(c => {
+        if (c.id === prev.currentConversationId) {
+          return {
+            ...c,
+            messages: prev.messages,
+            activeFiles: prev.activeFiles,
+            githubRepoLink: prev.githubRepoLink,
+            repoDetails: prev.repoDetails,
+            lastModified: Date.now()
+          };
+        }
+        return c;
+      });
+
+      // Avoid infinite loop by only updating if something actually changed
+      if (JSON.stringify(existing.messages) === JSON.stringify(prev.messages) &&
+        existing.activeFiles.length === prev.activeFiles.length) {
+        return prev;
+      }
+
+      return { ...prev, conversations: updatedConversations };
+    });
+  }, [state.messages, state.activeFiles, state.githubRepoLink, state.repoDetails, state.currentConversationId, state.isLoading]);
+
+  const handleNewChat = () => {
+    setState(prev => ({
+      ...prev,
+      messages: [],
+      activeFiles: [],
+      githubRepoLink: '',
+      repoTree: [],
+      repoDetails: null,
+      currentConversationId: null
+    }));
+  };
+
+  const selectConversation = (id: string) => {
+    const conv = state.conversations.find(c => c.id === id);
+    if (conv) {
+      setState(prev => ({
+        ...prev,
+        messages: conv.messages,
+        activeFiles: conv.activeFiles,
+        githubRepoLink: conv.githubRepoLink,
+        repoDetails: conv.repoDetails,
+        currentConversationId: conv.id
+      }));
     }
+    setIsMobileMenuOpen(false);
+  };
+
+  const deleteConversation = (id: string) => {
+    setState(prev => ({
+      ...prev,
+      conversations: prev.conversations.filter(c => c.id !== id),
+      currentConversationId: prev.currentConversationId === id ? null : prev.currentConversationId,
+      messages: prev.currentConversationId === id ? [] : prev.messages,
+      activeFiles: prev.currentConversationId === id ? [] : prev.activeFiles,
+      repoDetails: prev.currentConversationId === id ? null : prev.repoDetails
+    }));
+  };
+
+  // No migration needed for now
+  useEffect(() => {
   }, [state.llmConfig.model]);
 
   // Initialize theme
@@ -113,6 +258,62 @@ const App: React.FC = () => {
   }, [isDark]);
 
   const toggleTheme = () => setIsDark(!isDark);
+
+  // Key Verification Logic
+  useEffect(() => {
+    const verifyKeys = async () => {
+      const providers: LLMProvider[] = ['google', 'openai', 'anthropic', 'deepseek'];
+
+      for (const provider of providers) {
+        const key = state.llmConfig.apiKeys[provider];
+
+        // If key is removed or too short, clear capabilities
+        if (!key || key.length <= 20) {
+          setState(prev => {
+            // Only update if it actually exists to avoid render loops
+            if (!prev.keyCapabilities?.[provider]?.discoveredModels?.length) return prev;
+
+            return {
+              ...prev,
+              keyCapabilities: {
+                ...prev.keyCapabilities,
+                [provider]: { discoveredModels: [] }
+              }
+            };
+          });
+          continue;
+        }
+
+        // Verify existing key
+        const support = await verifyKey(provider, key);
+
+        if (support.isValid && support.discoveredModels) {
+          setState(prev => ({
+            ...prev,
+            keyCapabilities: {
+              ...prev.keyCapabilities,
+              [provider]: { discoveredModels: support.discoveredModels || [] }
+            }
+          }));
+        } else {
+          // Verification failed - clear models
+          setState(prev => ({
+            ...prev,
+            keyCapabilities: {
+              ...prev.keyCapabilities,
+              [provider]: { discoveredModels: [] }
+            }
+          }));
+        }
+      }
+    };
+    verifyKeys();
+  }, [
+    state.llmConfig.apiKeys.google,
+    state.llmConfig.apiKeys.openai,
+    state.llmConfig.apiKeys.anthropic,
+    state.llmConfig.apiKeys.deepseek
+  ]);
 
   const handleConfigChange = (newConfig: LLMConfig) => {
     setState(prev => ({ ...prev, llmConfig: newConfig }));
@@ -149,10 +350,29 @@ const App: React.FC = () => {
       isNew: true
     };
 
+    let newConvId = state.currentConversationId;
+    let updatedConversations = [...state.conversations];
+
+    if (!newConvId) {
+      newConvId = Date.now().toString();
+      const newConv = {
+        id: newConvId,
+        title: text.length > 30 ? text.substring(0, 30) + '...' : text,
+        messages: [userMessage, initialBotMessage],
+        activeFiles: state.activeFiles,
+        githubRepoLink: state.githubRepoLink,
+        repoDetails: state.repoDetails,
+        lastModified: Date.now(),
+      };
+      updatedConversations = [newConv, ...updatedConversations];
+    }
+
     setState(prev => ({
       ...prev,
-      messages: [...prev.messages.map(m => ({...m, isNew: false})), userMessage, initialBotMessage],
-      isLoading: true
+      messages: [...prev.messages.map(m => ({ ...m, isNew: false })), userMessage, initialBotMessage],
+      isLoading: true,
+      currentConversationId: newConvId,
+      conversations: updatedConversations
     }));
     setInput('');
 
@@ -164,8 +384,13 @@ const App: React.FC = () => {
         state.activeFiles,
         state.githubRepoLink,
         state.thinkingMode,
-        state.isSearchEnabled
+        state.isSearchEnabled,
+        state.isDesignMode
       );
+
+      const responseStartTime = Date.now();
+      let thinkingStartTime = Date.now();
+      let hasFinishedThinking = false;
 
       for await (const chunk of stream) {
         setState(prev => {
@@ -174,13 +399,36 @@ const App: React.FC = () => {
           if (msgIndex === -1) return prev;
 
           const updatedMsg = { ...newMessages[msgIndex] };
-          if (chunk.textDelta) updatedMsg.text += chunk.textDelta;
-          if (chunk.thinkingDelta) updatedMsg.thinking = (updatedMsg.thinking || "") + chunk.thinkingDelta;
-          
+
+          if (chunk.thinkingDelta) {
+            updatedMsg.thinking = (updatedMsg.thinking || "") + chunk.thinkingDelta;
+          }
+
+          if (chunk.textDelta) {
+            if (!hasFinishedThinking && updatedMsg.thinking) {
+              updatedMsg.thinkingTime = Date.now() - thinkingStartTime;
+              hasFinishedThinking = true;
+            }
+            updatedMsg.text += chunk.textDelta;
+          }
+
           newMessages[msgIndex] = updatedMsg;
           return { ...prev, messages: newMessages };
         });
       }
+
+      // Set total response time when streaming completes
+      setState(prev => {
+        const newMessages = [...prev.messages];
+        const msgIndex = newMessages.findIndex(m => m.id === botMessageId);
+        if (msgIndex !== -1) {
+          newMessages[msgIndex] = {
+            ...newMessages[msgIndex],
+            responseTime: Date.now() - responseStartTime
+          };
+        }
+        return { ...prev, messages: newMessages };
+      });
     } catch (e) {
       console.error("Streaming failed", e);
     } finally {
@@ -197,7 +445,7 @@ const App: React.FC = () => {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const allNewFiles: FileContext[] = [];
-      
+
       for (let i = 0; i < e.target.files.length; i++) {
         try {
           const extractedFiles = await readFile(e.target.files[i]);
@@ -206,10 +454,10 @@ const App: React.FC = () => {
           console.error("Error reading file", err);
         }
       }
-      
-      setState(prev => ({ 
-        ...prev, 
-        activeFiles: [...prev.activeFiles, ...allNewFiles] 
+
+      setState(prev => ({
+        ...prev,
+        activeFiles: [...prev.activeFiles, ...allNewFiles]
       }));
     }
   };
@@ -236,17 +484,17 @@ const App: React.FC = () => {
   const handleAttachRepoFiles = async () => {
     if (!state.repoDetails) return;
 
-    setIsRepoLoading(true); 
-    
+    setIsRepoLoading(true);
+
     try {
       const { tree, mapFile } = await fetchRepoStructure(state.repoDetails);
-      
+
       setState(prev => ({
         ...prev,
         repoTree: tree,
         activeFiles: [...prev.activeFiles.filter(f => f.name !== 'REPOSITORY_MAP.md'), mapFile]
       }));
-      
+
       setIsRepoModalOpen(false);
     } catch (error) {
       console.error("Failed to attach repo structure:", error);
@@ -292,18 +540,41 @@ const App: React.FC = () => {
     setIsOnboarding(true);
   };
 
-  return (
-    <div className="flex h-screen w-full bg-white dark:bg-black text-black dark:text-white overflow-hidden font-sans transition-colors duration-300">
-      
-      {isOnboarding && (
-        <Gateway 
-          initialConfig={state.llmConfig} 
-          onComplete={handleGatewayComplete} 
-        />
-      )}
+  if (!mounted) return <div className="min-h-screen bg-white" />;
 
-      <RepoModal 
-        isOpen={isRepoModalOpen} 
+  return (
+    <div className="flex h-screen w-full bg-paper text-ink overflow-hidden font-sans transition-colors duration-300">
+
+      {/* Decorative Background Elements */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none opacity-20 dark:opacity-40">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-500/30 rounded-full blur-[120px] animate-pulse" />
+        <div className="absolute bottom-[10%] right-[-5%] w-[35%] h-[35%] bg-amber-500/20 rounded-full blur-[100px]" />
+        <div className="absolute top-[20%] right-[15%] w-[20%] h-[20%] bg-purple-500/10 rounded-full blur-[80px]" />
+      </div>
+
+      <AnimatePresence mode="wait">
+        {isInitializing && (
+          <motion.div
+            key="init-loader"
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-white dark:bg-black flex items-center justify-center flex-col gap-4"
+          >
+            <Loader2 className="w-8 h-8 animate-spin text-black dark:text-white" />
+            <p className="text-sm font-medium text-gray-500">Verifying keys...</p>
+          </motion.div>
+        )}
+
+        {!isInitializing && isOnboarding && (
+          <Gateway
+            initialConfig={state.llmConfig}
+            onComplete={handleGatewayComplete}
+          />
+        )}
+      </AnimatePresence>
+
+      <RepoModal
+        isOpen={isRepoModalOpen}
         onClose={() => setIsRepoModalOpen(false)}
         repo={state.repoDetails}
         isLoading={isRepoLoading}
@@ -312,193 +583,209 @@ const App: React.FC = () => {
 
       {/* Sidebar (Desktop) */}
       <aside className="hidden md:flex w-[340px] flex-col border-r border-gray-100 dark:border-white/10 bg-white dark:bg-black">
-        <Sidebar 
-          files={state.activeFiles} 
+        <Sidebar
+          files={state.activeFiles}
           repoTree={state.repoTree}
-          onRemoveFile={removeFile} 
+          onRemoveFile={removeFile}
           onAddFiles={handleFileChange}
           githubLink={state.githubRepoLink}
-          onGithubLinkChange={(val) => setState(prev => ({...prev, githubRepoLink: val}))}
+          onGithubLinkChange={(val) => setState(prev => ({ ...prev, githubRepoLink: val }))}
           onGithubEnter={handleGithubEnter}
           isDark={isDark}
           toggleTheme={toggleTheme}
           onRepoFileClick={handleRepoFileClick}
           isLoadingFile={loadingFileId}
           onResetConfig={handleResetConfig}
+          // History Props
+          conversations={state.conversations}
+          currentConversationId={state.currentConversationId}
+          onSelectConversation={selectConversation}
+          onDeleteConversation={deleteConversation}
+          onNewChat={handleNewChat}
         />
       </aside>
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col relative min-w-0 bg-white dark:bg-black">
-        
+
         {/* Minimal Header */}
         <header className="h-20 flex items-center justify-between px-6 md:px-10 shrink-0">
           <div className="flex items-center gap-4">
-             <button onClick={toggleMobileMenu} className="md:hidden text-black dark:text-white p-2 -ml-2">
-               <Menu className="w-6 h-6" />
-             </button>
-             
-             <div className="md:hidden flex items-center gap-2">
-               <span className="font-display font-bold text-xl tracking-tight">CodeCleanse</span>
-             </div>
+            <button onClick={toggleMobileMenu} className="md:hidden text-black dark:text-white p-2 -ml-2">
+              <Menu className="w-6 h-6" />
+            </button>
 
-             {/* Desktop Model Selector */}
-             <div className="hidden md:block">
-               <ModelSelector 
-                 config={state.llmConfig} 
-                 onConfigChange={handleConfigChange} 
-               />
-             </div>
+            <div className="md:hidden flex items-center gap-2">
+              <span className="font-display font-bold text-xl tracking-tight">CodeCleanse</span>
+            </div>
+
+            {/* Desktop Model Selector */}
+            <div className="hidden md:block">
+              <ModelSelector
+                config={state.llmConfig}
+                onConfigChange={handleConfigChange}
+                capabilities={state.keyCapabilities}
+              />
+            </div>
           </div>
         </header>
 
         {/* Chat Area - Scrollable */}
         <div className="flex-1 overflow-hidden relative flex flex-col">
-          <ChatArea 
-            messages={state.messages} 
-            isLoading={state.isLoading} 
+          <ChatArea
+            messages={state.messages}
+            isLoading={state.isLoading}
             onSuggestionClick={handleSuggestionClick}
             showThinking={state.showThinking}
             supportsThinking={supportsThinking}
+            isDesignMode={state.isDesignMode}
           />
 
           {/* Input Area */}
+          {/* Input Area */}
           <div className="p-6 md:px-12 md:pb-8 bg-gradient-to-t from-white via-white to-transparent dark:from-black dark:via-black z-20">
             <div className="max-w-4xl mx-auto">
-              <div className="relative flex flex-col bg-gray-50 dark:bg-zinc-900 rounded-[2rem] p-2 pr-3 shadow-sm focus-within:shadow-md focus-within:ring-2 focus-within:ring-black/5 dark:focus-within:ring-white/10 transition-all border border-transparent dark:border-white/5">
-                 
-                 {/* Thinking Controls within Input Box */}
-                 {/* 
-                     LOGIC: Show these controls ONLY if the current model SUPPORTS thinking.
-                     The user specifically requested to show/hide based on model capability.
-                     We also hide it for the Free version specifically requested in a previous prompt,
-                     but respecting the "choosed models" constraint.
-                 */}
-                 {supportsThinking && !isFreeVersion && (
-                   <div className="absolute top-3 right-4 z-20 flex items-center gap-2 animate-in fade-in duration-300">
-                     {/* Visibility Toggle */}
-                     <button 
-                       onClick={() => setState(prev => ({...prev, showThinking: !prev.showThinking}))}
-                       className={`flex items-center justify-center w-7 h-7 rounded-full border shadow-sm transition-all ${
-                         state.showThinking 
-                          ? 'bg-white dark:bg-zinc-800 border-gray-200 dark:border-white/10 text-black dark:text-white' 
-                          : 'bg-transparent border-transparent text-gray-400 hover:bg-black/5 dark:hover:bg-white/5'
-                       }`}
-                       title={state.showThinking ? "Hide Thoughts" : "Show Thoughts"}
-                     >
-                       {state.showThinking ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                     </button>
-            
-                     {/* Thinking Mode Dropdown */}
-                     <div className="relative">
-                       <button 
-                         onClick={() => setIsThinkingDropdownOpen(!isThinkingDropdownOpen)}
-                         className="flex items-center gap-2 px-2.5 py-1.5 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-white/10 rounded-lg shadow-sm hover:shadow-md transition-all"
-                       >
-                         {state.thinkingMode === 'deep' ? <Layers className="w-3 h-3 text-blue-500" /> : <Zap className="w-3 h-3 text-amber-500" />}
-                         <span className="text-[10px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300">
-                           {state.thinkingMode === 'deep' ? 'Deep' : 'Concise'}
-                         </span>
-                         <ChevronDown className="w-3 h-3 text-gray-400" />
-                       </button>
-                       
-                       {isThinkingDropdownOpen && (
-                         <>
-                           <div className="fixed inset-0 z-30" onClick={() => setIsThinkingDropdownOpen(false)}></div>
-                           <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-zinc-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-xl overflow-hidden z-40 animate-in fade-in zoom-in-95 duration-200">
-                             <button 
-                               onClick={() => { setState(prev => ({...prev, thinkingMode: 'deep'})); setIsThinkingDropdownOpen(false); }}
-                               className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-white/5 ${state.thinkingMode === 'deep' ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}
-                             >
-                               <Layers className="w-4 h-4 text-blue-500" />
-                               <div>
-                                 <p className="text-xs font-bold text-black dark:text-white">Deep Dive</p>
-                                 <p className="text-[10px] text-gray-400">Detailed logic</p>
-                               </div>
-                               {state.thinkingMode === 'deep' && <Check className="w-3 h-3 text-blue-500 ml-auto" />}
-                             </button>
-                             <button 
-                               onClick={() => { setState(prev => ({...prev, thinkingMode: 'concise'})); setIsThinkingDropdownOpen(false); }}
-                               className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-white/5 ${state.thinkingMode === 'concise' ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}
-                             >
-                               <Zap className="w-4 h-4 text-amber-500" />
-                               <div>
-                                 <p className="text-xs font-bold text-black dark:text-white">Concise</p>
-                                 <p className="text-[10px] text-gray-400">Brief answers</p>
-                               </div>
-                               {state.thinkingMode === 'concise' && <Check className="w-3 h-3 text-amber-500 ml-auto" />}
-                             </button>
-                           </div>
-                         </>
-                       )}
-                     </div>
-                   </div>
-                 )}
+              <div className="group relative flex flex-col bg-white dark:bg-zinc-900 shadow-2xl shadow-black/5 ring-1 ring-black/5 dark:ring-white/10 transition-all rounded-[24px]">
 
-                 <div className="flex items-end gap-2 pt-8">
-                   <textarea
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleSendMessage();
-                        }
-                      }}
-                      placeholder={`Ask ${state.llmConfig.model}...`}
-                      className={`flex-1 bg-transparent text-black dark:text-white p-4 ${supportsThinking && !isFreeVersion ? 'pr-24' : ''} max-h-[150px] resize-none focus:outline-none text-[16px] leading-relaxed custom-scrollbar placeholder:text-gray-400 dark:placeholder:text-gray-600 font-medium`}
-                      rows={1}
-                      style={{ minHeight: '60px' }}
-                    />
+                {/* Textarea Area */}
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  placeholder={`Ask ${state.llmConfig.model.split('/').pop()}...`}
+                  className="w-full bg-transparent text-black dark:text-white p-5 pb-2 min-h-[60px] max-h-[200px] resize-none focus:outline-none text-[16px] leading-relaxed custom-scrollbar placeholder:text-gray-400 dark:placeholder:text-gray-600 font-medium z-10"
+                  rows={1}
+                  style={{ minHeight: '60px' }}
+                />
 
-                    <div className="flex flex-col gap-2 pb-2">
-                       <div className="flex items-center gap-1">
-                         <label className="p-3 rounded-full hover:bg-gray-200 dark:hover:bg-zinc-800 text-gray-400 cursor-pointer transition-colors" title="Attach context">
-                            <Paperclip className="w-5 h-5" />
-                            <input type="file" multiple className="hidden" onChange={handleFileChange} />
-                         </label>
-
-                         <button 
-                            onClick={toggleSearch}
-                            className={`p-3 rounded-full transition-all duration-300 ${
-                              state.isSearchEnabled 
-                                ? 'bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400' 
-                                : 'hover:bg-gray-200 dark:hover:bg-zinc-800 text-gray-400'
-                            }`}
-                            title={state.isSearchEnabled ? "Search Enabled" : "Enable Web Search"}
+                {/* Attached Files (Moved Here) */}
+                <AnimatePresence>
+                  {state.activeFiles.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="px-5 pb-3 flex gap-2 overflow-x-auto custom-scrollbar"
+                    >
+                      {state.activeFiles.map(f => (
+                        <div key={f.id} className="group/file flex items-center gap-2 pl-2 pr-1 py-1 bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5 rounded-lg">
+                          <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400 max-w-[100px] truncate">{f.name}</span>
+                          <button
+                            onClick={() => removeFile(f.id)}
+                            className="p-1 hover:bg-gray-200 dark:hover:bg-white/10 rounded-md text-gray-400 hover:text-red-500 transition-colors"
                           >
-                            <Globe className="w-5 h-5" />
+                            <X className="w-3 h-3" />
                           </button>
-                       </div>
+                        </div>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
-                       <button 
-                        onClick={handleSendMessage}
-                        disabled={state.isLoading || (!input.trim() && state.activeFiles.length === 0)}
-                        className="p-3 rounded-full bg-black dark:bg-white text-white dark:text-black hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 transition-all shadow-lg"
+                {/* Modern Toolbar Footer */}
+                <div className="flex items-center justify-between px-3 py-2">
+
+                  {/* Left Actions */}
+                  <div className="flex items-center gap-1">
+                    <label className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-white/5 text-gray-400 hover:text-black dark:hover:text-white cursor-pointer transition-all active:scale-95">
+                      <Paperclip className="w-5 h-5" />
+                      <input type="file" multiple className="hidden" onChange={handleFileChange} />
+                    </label>
+
+                    <button
+                      onClick={toggleSearch}
+                      className={`p-2 rounded-xl transition-all active:scale-95 ${state.isSearchEnabled
+                        ? 'bg-blue-50 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400'
+                        : 'hover:bg-gray-100 dark:hover:bg-white/5 text-gray-400 hover:text-black dark:hover:text-white'
+                        }`}
+                      title="Web Search"
+                    >
+                      <Globe className="w-5 h-5" />
+                    </button>
+
+                    {supportsVisuals && (
+                      <button
+                        onClick={() => setState(prev => ({ ...prev, isDesignMode: !prev.isDesignMode }))}
+                        className={`p-2 rounded-xl transition-all active:scale-95 ${state.isDesignMode
+                          ? 'bg-purple-50 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400'
+                          : 'hover:bg-gray-100 dark:hover:bg-white/5 text-gray-400 hover:text-black dark:hover:text-white'
+                          }`}
+                        title="Design Mode"
                       >
-                        {state.isLoading ? (
-                          <div className="w-5 h-5 rounded-sm border-2 border-white dark:border-black" />
-                        ) : (
-                          <ArrowUp className="w-5 h-5" />
-                        )}
+                        <Layers className="w-5 h-5" />
                       </button>
-                    </div>
-                 </div>
+                    )}
+                  </div>
 
-                 {state.activeFiles.length > 0 && (
-                   <div className="px-4 pb-3 flex gap-2 overflow-x-auto custom-scrollbar">
-                     {state.activeFiles.slice(0, 3).map(f => (
-                       <span key={f.id} className="text-xs font-mono bg-white dark:bg-black border border-gray-200 dark:border-white/10 px-2 py-1 rounded-md text-gray-500 whitespace-nowrap">
-                         {f.name}
-                       </span>
-                     ))}
-                     {state.activeFiles.length > 3 && (
-                       <span className="text-xs font-mono bg-white dark:bg-black border border-gray-200 dark:border-white/10 px-2 py-1 rounded-md text-gray-500">
-                         +{state.activeFiles.length - 3}
-                       </span>
-                     )}
-                   </div>
-                 )}
+                  {/* Right Actions */}
+                  <div className="flex items-center gap-3">
+                    {supportsThinking && (
+                      <div className="flex items-center gap-1 p-1 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-100 dark:border-white/5">
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setState(prev => ({ ...prev, thinkingMode: 'concise' }))}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all active:scale-95 ${state.thinkingMode === 'concise'
+                              ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm ring-1 ring-black/5'
+                              : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+                              }`}
+                            title="Fast Response"
+                          >
+                            <Zap className={`w-3.5 h-3.5 ${state.thinkingMode === 'concise' ? 'text-amber-500 fill-amber-500' : ''}`} />
+                            <span className="text-[10px] font-bold uppercase tracking-wider">Fast</span>
+                          </button>
+
+                          <button
+                            onClick={() => setState(prev => ({ ...prev, thinkingMode: 'deep' }))}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all active:scale-95 ${state.thinkingMode === 'deep'
+                              ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm ring-1 ring-black/5'
+                              : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+                              }`}
+                            title="Deep Thinking"
+                          >
+                            <BrainCircuit className={`w-3.5 h-3.5 ${state.thinkingMode === 'deep' ? 'text-blue-500 fill-blue-500/20' : ''}`} />
+                            <span className="text-[10px] font-bold uppercase tracking-wider">Deep</span>
+                          </button>
+                        </div>
+
+                        <div className="h-4 w-px bg-gray-200 dark:bg-white/10 mx-0.5" />
+
+                        <button
+                          onClick={() => setState(prev => ({ ...prev, showThinking: !prev.showThinking }))}
+                          className={`p-1.5 rounded-lg transition-all active:scale-95 ${state.showThinking
+                            ? 'text-blue-500'
+                            : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+                            }`}
+                          title={state.showThinking ? "Hide Thoughts" : "Show Thoughts"}
+                        >
+                          {state.showThinking ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleSendMessage}
+                      disabled={state.isLoading || (!input.trim() && state.activeFiles.length === 0)}
+                      className={`
+                        flex items-center justify-center w-10 h-10 rounded-xl transition-all shadow-sm
+                        ${state.isLoading || (!input.trim() && state.activeFiles.length === 0)
+                          ? 'bg-gray-100 dark:bg-white/10 text-gray-400 dark:text-gray-500 cursor-not-allowed'
+                          : 'bg-black dark:bg-white text-white dark:text-black hover:scale-105 active:scale-95 shadow-md'}
+                      `}
+                    >
+                      {state.isLoading ? (
+                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <ArrowUp className="w-5 h-5" />
+                      )}
+                    </button>
+                  </div>
+
+                </div>
               </div>
             </div>
           </div>
@@ -513,29 +800,36 @@ const App: React.FC = () => {
             <button onClick={toggleMobileMenu} className="absolute top-4 right-4 p-2 text-gray-400">
               <X className="w-6 h-6" />
             </button>
-            
+
             {/* Mobile Model Selector */}
             <div className="px-8 pt-6 pb-2">
-               <ModelSelector 
-                 config={state.llmConfig} 
-                 onConfigChange={handleConfigChange} 
-               />
+              <ModelSelector
+                config={state.llmConfig}
+                onConfigChange={handleConfigChange}
+                capabilities={state.keyCapabilities}
+              />
             </div>
 
-            <Sidebar 
+            <Sidebar
               className="h-full border-none"
-              files={state.activeFiles} 
+              files={state.activeFiles}
               repoTree={state.repoTree}
-              onRemoveFile={removeFile} 
+              onRemoveFile={removeFile}
               onAddFiles={handleFileChange}
               githubLink={state.githubRepoLink}
-              onGithubLinkChange={(val) => setState(prev => ({...prev, githubRepoLink: val}))}
+              onGithubLinkChange={(val) => setState(prev => ({ ...prev, githubRepoLink: val }))}
               onGithubEnter={() => { handleGithubEnter(); toggleMobileMenu(); }}
               isDark={isDark}
               toggleTheme={toggleTheme}
               onRepoFileClick={(path) => { handleRepoFileClick(path); toggleMobileMenu(); }}
               isLoadingFile={loadingFileId}
               onResetConfig={() => { handleResetConfig(); toggleMobileMenu(); }}
+              // History Props
+              conversations={state.conversations}
+              currentConversationId={state.currentConversationId}
+              onSelectConversation={selectConversation}
+              onDeleteConversation={deleteConversation}
+              onNewChat={handleNewChat}
             />
           </div>
         </div>

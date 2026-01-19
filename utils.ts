@@ -2,13 +2,15 @@ import { FileContext, FileNode } from "./types";
 import JSZip from "jszip";
 import * as XLSX from "xlsx";
 import yaml from "js-yaml";
-import * as pdfjsLib from "pdfjs-dist";
-
-// Handle ESM default export quirk for pdfjs-dist
-const pdf = (pdfjsLib as any).default || pdfjsLib;
-
-// Configure PDF Worker
-pdf.GlobalWorkerOptions.workerSrc = 'https://esm.sh/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+// 5. PDF.js is loaded dynamically to avoid Node-specific dependencies like 'canvas' during build
+let pdfLib: any = null;
+const getPdfLib = async () => {
+  if (pdfLib) return pdfLib;
+  const lib = await import("pdfjs-dist");
+  pdfLib = lib.default || lib;
+  pdfLib.GlobalWorkerOptions.workerSrc = 'https://esm.sh/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  return pdfLib;
+};
 
 /**
  * Converts a flat list of git paths into a nested FileNode tree.
@@ -61,7 +63,7 @@ export const buildFileTree = (items: any[]): FileNode[] => {
 export const readFile = async (file: File): Promise<FileContext[]> => {
   const buffer = await file.arrayBuffer();
   const fileType = determineFileType(new Uint8Array(buffer), file.name);
-  
+
   // 1. Handle ZIP Archives (Recursive)
   if (fileType.mime === 'application/zip') {
     return handleZipArchive(buffer);
@@ -80,8 +82,8 @@ export const readFile = async (file: File): Promise<FileContext[]> => {
   }
 
   // 3. Handle Excel
-  if (fileType.mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
-      fileType.mime === 'application/vnd.ms-excel') {
+  if (fileType.mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+    fileType.mime === 'application/vnd.ms-excel') {
     const text = handleExcel(buffer);
     return [{
       id: genId(),
@@ -106,20 +108,20 @@ export const readFile = async (file: File): Promise<FileContext[]> => {
 
   // 5. Handle Text / Code / YAML / JSON
   const textContent = new TextDecoder("utf-8").decode(buffer);
-  
+
   if (fileType.ext === 'yaml' || fileType.ext === 'yml') {
-     try {
-       const obj = yaml.load(textContent);
-       return [{
-         id: genId(),
-         name: file.name,
-         type: 'application/json',
-         content: JSON.stringify(obj, null, 2),
-         category: 'code'
-       }];
-     } catch (e) {
-       // Fallback to raw text if parsing fails
-     }
+    try {
+      const obj = yaml.load(textContent);
+      return [{
+        id: genId(),
+        name: file.name,
+        type: 'application/json',
+        content: JSON.stringify(obj, null, 2),
+        category: 'code'
+      }];
+    } catch (e) {
+      // Fallback to raw text if parsing fails
+    }
   }
 
   // Default: Treat as Text/Code
@@ -140,9 +142,9 @@ async function handleZipArchive(buffer: ArrayBuffer): Promise<FileContext[]> {
     const results: FileContext[] = [];
 
     const entries = Object.keys(zip.files);
-    
+
     // Limit to prevent crashing browser with massive repos
-    const limitedEntries = entries.slice(0, 50); 
+    const limitedEntries = entries.slice(0, 50);
 
     for (const filename of limitedEntries) {
       const entry = zip.files[filename];
@@ -151,11 +153,11 @@ async function handleZipArchive(buffer: ArrayBuffer): Promise<FileContext[]> {
       const fileData = await entry.async("arraybuffer");
       // Recursively identify type for each file in zip
       const type = determineFileType(new Uint8Array(fileData), filename);
-      
+
       // We mostly care about code/text in zips for this app
       if (type.mime.startsWith('image/')) {
-         // Skip images in zips to save tokens/memory for now, or uncomment to support
-         continue; 
+        // Skip images in zips to save tokens/memory for now, or uncomment to support
+        continue;
       }
 
       const text = new TextDecoder("utf-8").decode(fileData);
@@ -179,14 +181,14 @@ async function handleZipArchive(buffer: ArrayBuffer): Promise<FileContext[]> {
 
 async function handlePdf(buffer: ArrayBuffer): Promise<string> {
   try {
-    // Use the pdf object we resolved at the top
+    const pdf = await getPdfLib();
     const loadingTask = pdf.getDocument({ data: buffer });
     const pdfDoc = await loadingTask.promise;
     let fullText = "";
-    
+
     // Limit pages for token sanity
     const maxPages = Math.min(pdfDoc.numPages, 10);
-    
+
     for (let i = 1; i <= maxPages; i++) {
       const page = await pdfDoc.getPage(i);
       const textContent = await page.getTextContent();
@@ -204,13 +206,13 @@ function handleExcel(buffer: ArrayBuffer): string {
   try {
     const workbook = XLSX.read(buffer, { type: 'array' });
     let result = "";
-    
+
     workbook.SheetNames.slice(0, 3).forEach(sheetName => {
       const sheet = workbook.Sheets[sheetName];
       const csv = XLSX.utils.sheet_to_csv(sheet);
       result += `--- Sheet: ${sheetName} ---\n${csv}\n\n`;
     });
-    
+
     return result;
   } catch (e) {
     console.error("Excel Parse Error", e);
@@ -229,10 +231,10 @@ function determineFileType(header: Uint8Array, filename: string): { mime: string
   if (hex.startsWith('25504446')) return { mime: 'application/pdf', ext: 'pdf' };
   if (hex.startsWith('D0CF11E0')) return { mime: 'application/vnd.ms-excel', ext: 'xls' }; // Old Excel
   if (hex.startsWith('504B0304') && (ext === 'xlsx' || ext === 'docx')) {
-     // DOCX/XLSX are technically zips, relies on extension distinction here
-     return { mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: 'xlsx' };
+    // DOCX/XLSX are technically zips, relies on extension distinction here
+    return { mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: 'xlsx' };
   }
-  
+
   // Images
   if (hex.startsWith('FFD8FF')) return { mime: 'image/jpeg', ext: 'jpg' };
   if (hex.startsWith('89504E47')) return { mime: 'image/png', ext: 'png' };

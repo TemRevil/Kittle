@@ -16,6 +16,8 @@ interface SettingsModalProps {
     };
     modelUsage: Record<string, { promptTokens: number; completionTokens: number; totalCost: number }>;
     conversations: any[];
+    onResetUsage: () => void;
+    onFullReset: () => void;
 }
 
 const API_LINKS: Record<LLMProvider, { url: string; label: string }> = {
@@ -32,13 +34,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onConfigChange,
     totalUsage,
     modelUsage,
-    conversations
+    conversations,
+    onResetUsage,
+    onFullReset
 }) => {
     const [activeTab, setActiveTab] = useState<'analytics' | 'models' | 'keys'>('analytics');
     const [customKeys, setCustomKeys] = useState(config.apiKeys);
     const [isVerifying, setIsVerifying] = useState(false);
     const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
     const [verifiedProviders, setVerifiedProviders] = useState<Set<string>>(new Set());
+    const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; type: 'usage' | 'full'; title: string; desc: string } | null>(null);
 
     useEffect(() => {
         if (isOpen) {
@@ -163,9 +168,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <div className="text-2xl font-black text-white italic tracking-tighter">
                                     ${totalUsage.totalCost.toFixed(3)}
                                 </div>
-                                <div className="mt-4 flex items-center gap-2">
-                                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                                    <span className="text-[9px] font-bold text-green-500 uppercase tracking-widest">Active System</span>
+                                <div className="mt-4 space-y-3">
+                                    <div className="flex justify-between items-center py-2 border-y border-white/5">
+                                        <div className="flex flex-col">
+                                            <span className="text-[8px] font-black text-white/20 uppercase tracking-widest">Total Tokens</span>
+                                            <span className="text-xs font-black text-white">{totalUsage.promptTokens + totalUsage.completionTokens}</span>
+                                        </div>
+                                        <div className="text-right flex flex-col">
+                                            <span className="text-[8px] font-black text-white/20 uppercase tracking-widest">Models Used</span>
+                                            <span className="text-xs font-black text-white">{Object.keys(modelUsage).length}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between items-center pt-1">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                                            <span className="text-[9px] font-bold text-green-500 uppercase tracking-widest">Active System</span>
+                                        </div>
+                                        <button
+                                            onClick={() => setConfirmModal({
+                                                isOpen: true,
+                                                type: 'usage',
+                                                title: 'Reset Usage Statistics?',
+                                                desc: 'This will clear all token counts and cost history. Your API keys and chat history will remain safe.'
+                                            })}
+                                            className="text-[9px] font-bold text-white/20 hover:text-red-500 transition-all uppercase tracking-[0.2em] hover:scale-105 active:scale-95"
+                                        >
+                                            Reset Stats
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* CRITICAL ACTIONS */}
+                                <div className="mt-4 pt-4 border-t border-white/5 space-y-3">
+                                    <button
+                                        onClick={() => setConfirmModal({
+                                            isOpen: true,
+                                            type: 'full',
+                                            title: 'Nuke Local Archive?',
+                                            desc: 'Warning: This will permanently delete ALL API keys, chat history, and preferences. This action cannot be undone.'
+                                        })}
+                                        className="w-full flex items-center justify-between p-4 bg-red-500/5 hover:bg-red-500/10 border border-red-500/10 rounded-2xl group transition-all"
+                                    >
+                                        <div className="text-left">
+                                            <div className="text-[10px] font-black text-red-500 uppercase tracking-widest">Full System Reset</div>
+                                            <div className="text-[9px] font-bold text-red-500/30">Destroy all local data</div>
+                                        </div>
+                                        <XCircle className="w-4 h-4 text-red-500/20 group-hover:text-red-500 transition-colors" />
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -317,7 +366,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                     return (
                                                         <div key={provider} className="group flex flex-col gap-2">
                                                             <div className="flex items-center justify-between px-1">
-                                                                <div className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em]">{provider} gateway</div>
+                                                                <div className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em]">
+                                                                    {provider} gateway
+                                                                    {config.apiKeysDates?.[provider] ? (
+                                                                        <span className="ml-2 text-blue-500/50 lowercase italic">
+                                                                            • added on {new Date(config.apiKeysDates[provider]!).toLocaleDateString()}
+                                                                        </span>
+                                                                    ) : null}
+                                                                    {config.apiKeysFirstUsed?.[provider] ? (
+                                                                        <span className="ml-2 text-green-500/40 lowercase italic">
+                                                                            • first used {new Date(config.apiKeysFirstUsed[provider]!).toLocaleDateString()}
+                                                                        </span>
+                                                                    ) : null}
+                                                                </div>
                                                                 <a href={API_LINKS[provider].url} target="_blank" rel="noreferrer" className="text-[9px] font-black text-blue-500 hover:text-blue-400 flex items-center gap-1 transition-colors uppercase tracking-widest">
                                                                     Provision Key <ExternalLink className="w-2.5 h-2.5" />
                                                                 </a>
@@ -376,6 +437,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </footer>
                     </main>
                 </motion.div>
+
+                {/* --- CUSTOM CONFIRMATION MODAL --- */}
+                <AnimatePresence>
+                    {confirmModal?.isOpen && (
+                        <div className="fixed inset-0 z-[300] flex items-center justify-center p-6">
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setConfirmModal(null)}
+                                className="absolute inset-0 bg-black/60 backdrop-blur-md"
+                            />
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                                className="relative w-full max-w-md bg-zinc-900 border border-white/10 rounded-[2rem] p-8 shadow-2xl overflow-hidden"
+                            >
+                                <div className="absolute top-0 left-0 w-full h-1 bg-red-500" />
+                                <div className="mb-6">
+                                    <h4 className="text-xl font-black text-white mb-2">{confirmModal.title}</h4>
+                                    <p className="text-sm font-medium text-white/40 leading-relaxed">
+                                        {confirmModal.desc}
+                                    </p>
+                                </div>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => setConfirmModal(null)}
+                                        className="flex-1 py-4 bg-white/5 hover:bg-white/10 rounded-xl text-xs font-black text-white uppercase tracking-widest transition-all"
+                                    >
+                                        Abort
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            if (confirmModal.type === 'usage') onResetUsage();
+                                            else onFullReset();
+                                            setConfirmModal(null);
+                                        }}
+                                        className="flex-1 py-4 bg-red-500 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-red-600 transition-all shadow-[0_10px_20px_rgba(239,68,68,0.2)]"
+                                    >
+                                        Confirm
+                                    </button>
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
             </div>
         </AnimatePresence>
     );

@@ -19,7 +19,7 @@ interface SidebarProps {
   onSelectAllFiles?: () => void;
   isRepoLocked?: boolean;
   loadingFilePaths?: string[];
-  onResetConfig: () => void;
+  onOpenSettings: () => void;
   conversations: StoredConversation[];
   currentConversationId: string | null;
   onSelectConversation: (id: string) => void;
@@ -42,7 +42,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectAllFiles,
   isRepoLocked,
   loadingFilePaths,
-  onResetConfig,
+  onOpenSettings,
   conversations,
   currentConversationId,
   onSelectConversation,
@@ -363,7 +363,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Footer */}
       <div className="px-6 pt-6 pb-24 md:px-8 md:py-8 shrink-0 space-y-2 bg-white dark:bg-black z-10 border-t border-gray-100 dark:border-white/5">
         <button
-          onClick={onResetConfig}
+          onClick={onOpenSettings}
           className="w-full flex items-center justify-start gap-3 px-3 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-all"
         >
           <Settings className="w-3.5 h-3.5" />

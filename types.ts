@@ -79,6 +79,8 @@ export interface LLMConfig {
     anthropic: string;
     deepseek: string;
   };
+  apiKeysDates?: Record<LLMProvider, number>;
+  apiKeysFirstUsed?: Record<LLMProvider, number>;
 }
 
 export interface LLMModel {
@@ -127,9 +129,6 @@ export interface ChatState {
 
 export const AVAILABLE_MODELS: Record<LLMProvider, LLMModel[]> = {
   google: [
-    { id: 'gemini-3-pro', name: 'Gemini 3 Pro', hasThinking: true, version: 3 },
-    { id: 'gemini-3-flash', name: 'Gemini 3 Flash', hasThinking: true, version: 3 },
-    { id: 'gemini-3-deep-think', name: 'Gemini 3 Deep Think', hasThinking: true, version: 3 },
     { id: 'gemini-2.0-pro-exp', name: 'Gemini 2.0 Pro', hasThinking: false, version: 2 },
     { id: 'gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash', hasThinking: false, version: 2 },
     { id: 'gemini-2.0-flash-thinking-exp-1219', name: 'Gemini 2.0 Thinking', hasThinking: true, version: 2 },
@@ -155,8 +154,9 @@ export interface ModelPricing {
 }
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
+  'gemini-2.0-pro-exp': { input: 0.1, output: 0.4 },
   'gemini-2.0-flash-exp': { input: 0.1, output: 0.4 },
-  'gemini-2.0-flash-thinking-exp': { input: 0.1, output: 0.4 },
+  'gemini-2.0-flash-thinking-exp-1219': { input: 0.1, output: 0.4 },
   'gemini-1.5-pro': { input: 1.25, output: 3.75 },
   'gemini-1.5-flash': { input: 0.075, output: 0.3 },
   'gpt-4o': { input: 2.50, output: 10.00 },

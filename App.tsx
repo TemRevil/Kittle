@@ -46,6 +46,18 @@ const App: React.FC = () => {
         openai: '',
         anthropic: '',
         deepseek: ''
+      },
+      apiKeysDates: {
+        google: Date.now(),
+        openai: 0,
+        anthropic: 0,
+        deepseek: 0
+      },
+      apiKeysFirstUsed: {
+        google: 0,
+        openai: 0,
+        anthropic: 0,
+        deepseek: 0
       }
     },
     totalUsage: {
@@ -150,6 +162,20 @@ const App: React.FC = () => {
           currentKeys = { ...currentKeys, ...parsedKeys };
 
           let nextConfig = { ...state.llmConfig, apiKeys: currentKeys };
+
+          const savedDatesStr = localStorage.getItem('llm_api_keys_dates');
+          if (savedDatesStr) {
+            try {
+              nextConfig.apiKeysDates = JSON.parse(savedDatesStr);
+            } catch (e) { }
+          }
+
+          const savedFirstUsedStr = localStorage.getItem('llm_api_keys_first_used');
+          if (savedFirstUsedStr) {
+            try {
+              nextConfig.apiKeysFirstUsed = JSON.parse(savedFirstUsedStr);
+            } catch (e) { }
+          }
 
           if (savedConfig) {
             const parsedConfig = JSON.parse(savedConfig);
@@ -369,9 +395,39 @@ const App: React.FC = () => {
   ]);
 
   const handleConfigChange = (newConfig: LLMConfig) => {
-    setState(prev => ({ ...prev, llmConfig: newConfig }));
-    localStorage.setItem('llm_api_keys', JSON.stringify(newConfig.apiKeys));
-    localStorage.setItem('llm_config', JSON.stringify({ provider: newConfig.provider, model: newConfig.model }));
+    // Determine which keys are newly added/changed to record their date
+    const updatedDates = { ...(state.llmConfig.apiKeysDates || {}) } as Record<LLMProvider, number>;
+    const providers: LLMProvider[] = ['google', 'openai', 'anthropic', 'deepseek'];
+
+    providers.forEach(p => {
+      // If the key is new/changed and it's not empty, set the date
+      if (newConfig.apiKeys[p] && newConfig.apiKeys[p] !== state.llmConfig.apiKeys[p]) {
+        updatedDates[p] = Date.now();
+      }
+    });
+
+    const finalConfig = { ...newConfig, apiKeysDates: updatedDates };
+    setState(prev => ({ ...prev, llmConfig: finalConfig }));
+    localStorage.setItem('llm_api_keys', JSON.stringify(finalConfig.apiKeys));
+    localStorage.setItem('llm_api_keys_dates', JSON.stringify(finalConfig.apiKeysDates));
+    localStorage.setItem('llm_config', JSON.stringify({ provider: finalConfig.provider, model: finalConfig.model }));
+  };
+
+  const handleResetUsage = () => {
+    setState(prev => ({
+      ...prev,
+      totalUsage: { promptTokens: 0, completionTokens: 0, totalCost: 0 },
+      modelUsage: {}
+    }));
+    localStorage.removeItem('total_usage');
+    localStorage.removeItem('model_usage');
+  };
+
+  const handleFullReset = () => {
+    if (confirm("This will delete ALL data (history, keys, settings) and reset Kittle. Are you sure?")) {
+      localStorage.clear();
+      window.location.reload();
+    }
   };
 
   const handleGatewayComplete = (config: LLMConfig) => {
@@ -577,6 +633,14 @@ const App: React.FC = () => {
             const modelKey = prev.llmConfig.model;
             const currentModelStats = prev.modelUsage[modelKey] || { promptTokens: 0, completionTokens: 0, totalCost: 0 };
 
+            // Update first used date if not set
+            const provider = prev.llmConfig.provider;
+            const updatedFirstUsed = { ...(prev.llmConfig.apiKeysFirstUsed || {}) } as Record<LLMProvider, number>;
+            if (!updatedFirstUsed[provider]) {
+              updatedFirstUsed[provider] = Date.now();
+              localStorage.setItem('llm_api_keys_first_used', JSON.stringify(updatedFirstUsed));
+            }
+
             const updatedModelUsage = {
               ...prev.modelUsage,
               [modelKey]: {
@@ -603,6 +667,10 @@ const App: React.FC = () => {
 
             return {
               ...prev,
+              llmConfig: {
+                ...prev.llmConfig,
+                apiKeysFirstUsed: updatedFirstUsed
+              },
               messages: prev.messages.map(m =>
                 m.id === botMessageId ? { ...m, usage: chunk.usage } : m
               ),
@@ -839,6 +907,8 @@ const App: React.FC = () => {
         totalUsage={state.totalUsage}
         modelUsage={state.modelUsage}
         conversations={state.conversations}
+        onResetUsage={handleResetUsage}
+        onFullReset={handleFullReset}
       />
 
       {/* Quota Error Overlay */}
@@ -1030,7 +1100,7 @@ const App: React.FC = () => {
           onRepoFileClick={handleRepoFileClick}
           onSelectAllFiles={handleSelectAllFiles}
           loadingFilePaths={loadingFilePaths}
-          onResetConfig={() => setIsSettingsOpen(true)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
           isRepoLocked={!!state.repoDetails}
           // History Props
           conversations={state.conversations}
@@ -1273,7 +1343,7 @@ const App: React.FC = () => {
                 onRepoFileClick={(path) => { handleRepoFileClick(path); toggleMobileMenu(); }}
                 onSelectAllFiles={handleSelectAllFiles}
                 loadingFilePaths={loadingFilePaths}
-                onResetConfig={() => { setIsSettingsOpen(true); toggleMobileMenu(); }}
+                onOpenSettings={() => { setIsSettingsOpen(true); toggleMobileMenu(); }}
                 // History Props
                 conversations={state.conversations}
                 currentConversationId={state.currentConversationId}

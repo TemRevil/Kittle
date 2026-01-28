@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Message, AVAILABLE_MODELS } from '../types';
 import { User, Check, Copy, Sparkles, ArrowRight, BrainCircuit, ChevronDown, Code2, Layout, Download, MoreVertical, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -77,7 +78,11 @@ const ThinkingSection = memo(({ text, thinkingTime }: { text: string, thinkingTi
             className="overflow-hidden"
           >
             <div className="ml-4 pl-6 border-l-2 border-gray-100 dark:border-white/5 py-2 text-[13px] font-medium text-gray-500 dark:text-zinc-500 leading-relaxed italic">
-              {text || <span className="opacity-50 italic">Analyzing...</span>}
+              {text ? (
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+              ) : (
+                <span className="opacity-50 italic">Analyzing...</span>
+              )}
             </div>
           </motion.div>
         )}
@@ -147,7 +152,17 @@ const MessageItem = memo(({ msg, supportsThinking, showThinking, isDesignMode, i
     p: ({ children }: any) => <p className="mb-4 last:mb-0 animate-in fade-in duration-700 fill-mode-both">{children}</p>,
     li: ({ children }: any) => <li className="animate-in fade-in duration-700 fill-mode-both">{children}</li>,
     blockquote: ({ children }: any) => <blockquote className="border-l-4 border-gray-200 dark:border-white/20 pl-4 italic my-4 opacity-70 animate-in fade-in duration-1000 fill-mode-both">{children}</blockquote>,
-    a: ({ href, children }: any) => <a href={href} className="underline decoration-1 underline-offset-4 decoration-gray-400 hover:decoration-black dark:hover:decoration-white transition-all font-medium">{children}</a>
+    a: ({ href, children }: any) => <a href={href} className="underline decoration-1 underline-offset-4 decoration-gray-400 hover:decoration-black dark:hover:decoration-white transition-all font-medium">{children}</a>,
+    table: ({ children }: any) => (
+      <div className="my-6 overflow-x-auto rounded-xl border border-gray-100 dark:border-white/10 shadow-sm">
+        <table className="w-full border-collapse text-sm text-left">{children}</table>
+      </div>
+    ),
+    thead: ({ children }: any) => <thead className="bg-gray-50/50 dark:bg-white/5 font-bold">{children}</thead>,
+    tbody: ({ children }: any) => <tbody className="divide-y divide-gray-100 dark:divide-white/5">{children}</tbody>,
+    tr: ({ children }: any) => <tr className="hover:bg-gray-50/30 dark:hover:bg-white/[0.02] transition-colors">{children}</tr>,
+    th: ({ children }: any) => <th className="px-4 py-3 border-b border-gray-100 dark:border-white/10 font-bold text-gray-900 dark:text-gray-100">{children}</th>,
+    td: ({ children }: any) => <td className="px-4 py-3 text-gray-700 dark:text-gray-300 leading-relaxed font-medium">{children}</td>,
   }), [isLoadingMessage]);
 
   const handleCopy = (e: React.MouseEvent) => {
@@ -216,7 +231,12 @@ const MessageItem = memo(({ msg, supportsThinking, showThinking, isDesignMode, i
 
         {msg.text ? (
           <div className={`markdown-content text-sm md:text-[15px] leading-6 md:leading-7 ${msg.role === 'user' ? 'font-medium' : ''}`}>
-            <ReactMarkdown components={components}>{msg.text}</ReactMarkdown>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={components}
+            >
+              {msg.text}
+            </ReactMarkdown>
           </div>
         ) : (msg.role === 'model' && !msg.thinking && (
           <div className="flex flex-col gap-3 py-2">

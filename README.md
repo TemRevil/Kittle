@@ -101,5 +101,5 @@ We ❤️ contributions! Whether you're fixing a bug, adding a provider, or impr
 ---
 
 <div align="center">
-  <sub>Built with ❤️ by TemRevil & the Kittle Community</sub>
+  <sub>Built with ❤️ by TemRevil</sub>
 </div>

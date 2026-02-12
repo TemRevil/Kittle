@@ -1,11 +1,13 @@
 <div align="center">
+  <img src="public/favicon.png" width="80" height="80" alt="Kittle Logo" />
   <h1>✨ Kittle</h1>
-  <p><strong>Your Intelligent Coding Companion</strong></p>
+  <p><strong>The Ultimate AI-Powered Code Intelligence Hub</strong></p>
+
   <p>
+    <a href="https://temrevil.github.io/Kittle/"><img src="https://img.shields.io/badge/Live-Demo-brightgreen?style=for-the-badge&logo=github" alt="Live Demo" /></a>
     <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=next.js" alt="Next.js" /></a>
     <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-5.0-blue?style=for-the-badge&logo=typescript" alt="TypeScript" /></a>
-    <a href="https://tailwindcss.com"><img src="https://img.shields.io/badge/Tailwind_CSS-3.0-38B2AC?style=for-the-badge&logo=tailwind-css" alt="Tailwind" /></a>
-    <img src="https://img.shields.io/badge/AI_Engine-Multi--Model-white?style=for-the-badge&logo=openai" alt="Multi-Model" />
+    <a href="https://tailwindcss.com"><img src="https://img.shields.io/badge/Tailwind_CSS-4.0-38B2AC?style=for-the-badge&logo=tailwind-css" alt="Tailwind" /></a>
   </p>
 </div>
 
@@ -13,84 +15,91 @@
 
 ## 🚀 Overview
 
-**Kittle** is a next-generation AI coding assistant designed to live inside your codebase. It bridges the gap between static code analysis and dynamic LLM reasoning, allowing you to "chat" with your project files, generate architecture diagrams, and debug complex logic in real-time.
+**Kittle** is an advanced AI coding assistant that lives where your code does. It provides a seamless interface to analyze repository structures, debug complex logic, and generate real-time architecture diagrams using state-of-the-art LLMs.
+
+Designed for performance and privacy, Kittle runs entirely in your browser, connecting directly to your preferred AI providers.
 
 ### 🌟 Key Features
 
 | Feature | Description |
 | :--- | :--- |
-| **🧠 Deep Reasoning** | Supports **Gemini 2.0/3.0**, **GPT-4o**, **Claude 3.5**, and **DeepSeek R1/V3** via your own API keys. |
-| **🎨 Design Mode** | Generate **Mermaid.js** architecture diagrams from your code instantly. Toggle visual/text modes seamlessly. |
-| **📂 Context Aware** | Deep integration with your file system. Upload files or select repository subtrees for analysis. |
-| **🔒 Privacy First** | API Keys are stored locally (browser storage). Your keys never hit our servers. |
-| **⚡ Real-time Stream** | Optimized generic chat interface with 60fps timer and partial rendering. |
+| **🧠 Multi-Model Intelligence** | Connect to **Gemini 2.0/Thinking**, **GPT-4o**, **Claude 3.5**, and **DeepSeek R1** via direct API calls. |
+| **🎨 Design Mode** | Instantly generate **Mermaid.js** architecture diagrams by chatting with your code. |
+| **📂 Context-Aware Analysis** | Deep integration with your Local Files and GitHub Repositories. |
+| **🔒 Zero-Server Architecture** | Your API keys never leave your browser. Privacy is baked into the core. |
+| **⚡ Ultra-Responsive UI** | Built with Framer Motion for 60fps animations and a premium glassmorphic feel. |
 
 ---
 
 ## 🏗️ Architecture
 
-Kittle operates as a lightweight Next.js client that connects directly to LLM providers via a secure gateway.
+Kittle is a pure static frontend application deployed via GitHub Actions.
 
 ```mermaid
 graph TD
-    User[👩‍💻 Developer] -->|Chat/Query| UI[🖥️ Kittle UI]
-    UI -->|Local Keys| Gateway[🔑 Secure Gateway]
+    User[👩‍💻 Developer] -->|Interacts| UI[🖥️ Kittle Web App]
+    UI -->|Direct API Call| Providers[🧠 AI Providers]
     
-    subgraph "Core Services"
-        Gateway --> LLM[🧠 LLM Factory]
-        LLM -->|Stream| Parser[⚡ Response Parser]
-        Parser -->|Text| Chat[💬 Chat Area]
-        Parser -->|Code| Renderer[🎨 Mermaid/Code Renderer]
+    subgraph "Supported Providers"
+        Providers --> Google[Google Gemini]
+        Providers --> OpenAI[OpenAI GPT-4o]
+        Providers --> Anthropic[Claude 3.5]
+        Providers --> DeepSeek[DeepSeek R1/V3]
     end
     
-    subgraph "Providers"
-        LLM -.->|API Call| Google[Google Gemini]
-        LLM -.->|API Call| OpenAI[OpenAI GPT-4o]
-        LLM -.->|API Call| Anthropic[Claude 3.5]
-        LLM -.->|API Call| DeepSeek[DeepSeek R1/V3]
-    end
+    UI -->|LocalStorage| Keys[🔑 Secure Key Storage]
+    UI -->|Mermaid.js| Charts[🎨 Visual Diagrams]
 ```
 
 ---
 
 ## 🛠️ Getting Started
 
-Follow these steps to deploy your personal Kittle instance.
-
 ### Prerequisites
-- **Node.js** (v18+)
-- **npm** or **yarn**
+- **Node.js** (v20+)
+- **npm**
 
 ### Installation
 
 1.  **Clone the repository**
     ```bash
-    git clone https://github.com/your-username/kittle.git
-    cd kittle
+    git clone https://github.com/TemRevil/Kittle.git
+    cd Kittle
     ```
 
 2.  **Install dependencies**
     ```bash
     npm install
-    # or
-    yarn install
     ```
 
-3.  **Run the development server**
+3.  **Run locally**
     ```bash
     npm run dev
     ```
 
-4.  **Launch**
-    Open [http://localhost:3000](http://localhost:3000) in your browser.
-    Enter your preferred API Key (Google AI, OpenAI, etc.) in the Gateway to start.
+4.  **Deployment**
+    The project is configured for auto-deployment via GitHub Actions. Simply push to the `main` branch.
 
 ---
 
-## 🤝 Contributing
+## 🤝 Collaboration & Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+We ❤️ contributions! Whether you're fixing a bug, adding a provider, or improving the UI, your help is welcome.
+
+### How to contribute:
+1. **Fork** the repository.
+2. **Create a branch** for your feature: `git checkout -b feature/amazing-logic`.
+3. **Commit** your changes: `git commit -m 'Add some feature'`.
+4. **Push** to the branch: `git push origin feature/amazing-logic`.
+5. **Open a Pull Request**.
+
+### Development Guidelines:
+- Keep the UI **premium and glassmorphic**.
+- Use **Tailwind CSS v4** for styling.
+- Ensure all AI calls remain **client-side** for privacy.
+
+---
 
 <div align="center">
-  <sub>Built with ❤️ by the Kittle Team</sub>
+  <sub>Built with ❤️ by TemRevil & the Kittle Community</sub>
 </div>

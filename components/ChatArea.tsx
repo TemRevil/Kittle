@@ -79,7 +79,20 @@ const ThinkingSection = memo(({ text, thinkingTime }: { text: string, thinkingTi
           >
             <div className="ml-4 pl-6 border-l-2 border-gray-100 dark:border-white/5 py-2 text-[13px] font-medium text-gray-500 dark:text-zinc-500 leading-relaxed italic">
               {text ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+                <div className="markdown-content">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      a: ({ href, children }: any) => (
+                        <a href={href} target="_blank" rel="noopener noreferrer" className="underline decoration-1 underline-offset-4 decoration-gray-400 hover:decoration-black dark:hover:decoration-white transition-all font-medium">
+                          {children}
+                        </a>
+                      )
+                    }}
+                  >
+                    {text}
+                  </ReactMarkdown>
+                </div>
               ) : (
                 <span className="opacity-50 italic">Analyzing...</span>
               )}
@@ -152,7 +165,16 @@ const MessageItem = memo(({ msg, supportsThinking, showThinking, isDesignMode, i
     p: ({ children }: any) => <p className="mb-4 last:mb-0 animate-in fade-in duration-700 fill-mode-both">{children}</p>,
     li: ({ children }: any) => <li className="animate-in fade-in duration-700 fill-mode-both">{children}</li>,
     blockquote: ({ children }: any) => <blockquote className="border-l-4 border-gray-200 dark:border-white/20 pl-4 italic my-4 opacity-70 animate-in fade-in duration-1000 fill-mode-both">{children}</blockquote>,
-    a: ({ href, children }: any) => <a href={href} className="underline decoration-1 underline-offset-4 decoration-gray-400 hover:decoration-black dark:hover:decoration-white transition-all font-medium">{children}</a>,
+    a: ({ href, children }: any) => (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline decoration-1 underline-offset-4 decoration-gray-400 hover:decoration-black dark:hover:decoration-white transition-all font-medium"
+      >
+        {children}
+      </a>
+    ),
     table: ({ children }: any) => (
       <div className="my-6 overflow-x-auto rounded-xl border border-gray-100 dark:border-white/10 shadow-sm">
         <table className="w-full border-collapse text-sm text-left">{children}</table>

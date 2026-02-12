@@ -23,6 +23,8 @@ const isValidKeyFormat = (provider: string, key: string) => {
       return trimmed.startsWith('sk-ant') && trimmed.length > 30;
     case 'deepseek':
       return trimmed.startsWith('sk-') && trimmed.length > 20;
+    case 'openrouter':
+      return trimmed.startsWith('sk-or-') && trimmed.length > 30;
     default:
       return false;
   }
@@ -33,7 +35,8 @@ const API_LINKS: Record<LLMProvider, { url: string; label: string }> = {
   google: { url: 'https://aistudio.google.com/apikey', label: 'Google AI' },
   openai: { url: 'https://platform.openai.com/api-keys', label: 'OpenAI Platform' },
   anthropic: { url: 'https://console.anthropic.com/settings/keys', label: 'Anthropic Console' },
-  deepseek: { url: 'https://platform.deepseek.com/api_keys', label: 'DeepSeek Platform' }
+  deepseek: { url: 'https://platform.deepseek.com/api_keys', label: 'DeepSeek Platform' },
+  openrouter: { url: 'https://openrouter.ai/keys', label: 'OpenRouter' }
 };
 
 export const Gateway: React.FC<GatewayProps> = ({ initialConfig, onComplete }) => {
@@ -49,7 +52,7 @@ export const Gateway: React.FC<GatewayProps> = ({ initialConfig, onComplete }) =
     let firstValidProvider: LLMProvider | null = null;
     let errors: Record<string, string> = {};
 
-    const providersToCheck = (['google', 'openai', 'anthropic', 'deepseek'] as LLMProvider[])
+    const providersToCheck = (['google', 'openai', 'anthropic', 'deepseek', 'openrouter'] as LLMProvider[])
       .filter(p => isValidKeyFormat(p, customKeys[p]));
 
     await Promise.all(providersToCheck.map(async (provider) => {
@@ -74,6 +77,7 @@ export const Gateway: React.FC<GatewayProps> = ({ initialConfig, onComplete }) =
       if (firstValidProvider === 'openai') model = 'gpt-4o';
       if (firstValidProvider === 'anthropic') model = 'claude-3-5-sonnet-latest';
       if (firstValidProvider === 'deepseek') model = 'deepseek-reasoner';
+      if (firstValidProvider === 'openrouter') model = 'anthropic/claude-3.5-sonnet';
 
       const newConfig: LLMConfig = {
         provider: firstValidProvider,
@@ -137,7 +141,7 @@ export const Gateway: React.FC<GatewayProps> = ({ initialConfig, onComplete }) =
             </div>
 
             <div className="space-y-5 mb-8 relative z-10">
-              {(['google', 'openai', 'anthropic', 'deepseek'] as const).map(provider => {
+              {(['google', 'openai', 'anthropic', 'deepseek', 'openrouter'] as const).map(provider => {
                 const key = customKeys[provider];
                 const formatValid = isValidKeyFormat(provider, key);
                 const hasValue = key.length > 0;
@@ -169,7 +173,7 @@ export const Gateway: React.FC<GatewayProps> = ({ initialConfig, onComplete }) =
                     </div>
                     <input
                       type="password"
-                      placeholder={provider === 'google' ? 'AIza...' : 'sk-...'}
+                      placeholder={provider === 'google' ? 'AIza...' : (provider === 'openrouter' ? 'sk-or-...' : 'sk-...')}
                       value={customKeys[provider]}
                       onChange={(e) => {
                         setCustomKeys({ ...customKeys, [provider]: e.target.value });
@@ -200,7 +204,7 @@ export const Gateway: React.FC<GatewayProps> = ({ initialConfig, onComplete }) =
                     )}
                     {hasValue && !formatValid && !error && (
                       <p className="text-[10px] text-orange-500 mt-1.5 ml-1 font-medium">
-                        Invalid format. Expecting {provider === 'google' ? 'AIza...' : 'sk-...'}
+                        Invalid format. Expecting {provider === 'google' ? 'AIza...' : (provider === 'openrouter' ? 'sk-or-...' : 'sk-...')}
                       </p>
                     )}
                   </div>

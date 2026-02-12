@@ -17,6 +17,7 @@ const isValidKey = (provider: string, key: string) => {
     case 'openai': return trimmed.startsWith('sk-') && trimmed.length > 30;
     case 'anthropic': return trimmed.startsWith('sk-ant') && trimmed.length > 30;
     case 'deepseek': return trimmed.startsWith('sk-') && trimmed.length > 20;
+    case 'openrouter': return trimmed.startsWith('sk-or-') && trimmed.length > 30;
     default: return false;
   }
 };
@@ -30,7 +31,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ config, onConfigCh
     return isValidKey(p, config.apiKeys[p]);
   };
 
-  const availableProviders = (['google', 'deepseek', 'openai', 'anthropic'] as LLMProvider[]).filter(isProviderAvailable);
+  const availableProviders = (['google', 'deepseek', 'openai', 'anthropic', 'openrouter'] as LLMProvider[]).filter(isProviderAvailable);
 
   return (
     <div className="relative" ref={dropdownRef}>

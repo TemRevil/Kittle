@@ -277,6 +277,60 @@ export async function verifyDeepSeekKey(apiKey: string): Promise<KeySupport> {
 }
 
 /**
+ * Verify OpenRouter API key and discover available models.
+ */
+export async function verifyOpenRouterKey(apiKey: string): Promise<KeySupport> {
+    if (!apiKey || !apiKey.startsWith('sk-or-') || apiKey.length < 30) {
+        return { isValid: false, error: "Malformed Key (must start with sk-or-)" };
+    }
+
+    try {
+        const response = await fetch('https://openrouter.ai/api/v1/models', {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            return { isValid: false, error: err.error?.message || "Invalid Key" };
+        }
+
+        const data = await response.json();
+        const rawModels = data.data || [];
+
+        // Filter for a selection of powerful models
+        const discoveredModels: DiscoveredModel[] = rawModels
+            .filter((m: any) => {
+                const id = m.id.toLowerCase();
+                const whitelist = [
+                    'anthropic/claude-3.5-sonnet',
+                    'google/gemini-2.0-flash-001',
+                    'deepseek/deepseek-r1',
+                    'openai/gpt-4o',
+                    'meta-llama/llama-3.1-405b'
+                ];
+                return whitelist.some(w => id.startsWith(w));
+            })
+            .map((m: any) => {
+                const id = m.id;
+                const name = m.name || id;
+                const hasThinking = id.includes('r1') || id.includes('o1') || id.includes('reasoner');
+
+                return {
+                    id,
+                    name: `${name} (OR)`,
+                    hasThinking,
+                    version: id.includes('3.5') ? 3.5 : (id.includes('4o') ? 4 : (id.includes('2.0') ? 2 : 1))
+                };
+            });
+
+        return { isValid: true, discoveredModels };
+    } catch (error: any) {
+        console.error("OpenRouter key verification failed:", error);
+        return { isValid: false, error: error.message || "Network Error" };
+    }
+}
+
+/**
  * Verify any provider's API key.
  */
 export async function verifyKey(provider: string, apiKey: string): Promise<KeySupport> {
@@ -285,6 +339,7 @@ export async function verifyKey(provider: string, apiKey: string): Promise<KeySu
         case 'openai': return verifyOpenAIKey(apiKey);
         case 'anthropic': return verifyAnthropicKey(apiKey);
         case 'deepseek': return verifyDeepSeekKey(apiKey);
+        case 'openrouter': return verifyOpenRouterKey(apiKey);
         default: return { isValid: false, error: "Unknown provider" };
     }
 }

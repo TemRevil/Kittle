@@ -67,7 +67,7 @@ export interface FileNode {
   isOpen?: boolean;
 }
 
-export type LLMProvider = 'google' | 'openai' | 'anthropic' | 'deepseek';
+export type LLMProvider = 'google' | 'openai' | 'anthropic' | 'deepseek' | 'openrouter';
 export type ThinkingMode = 'deep' | 'concise';
 
 export interface LLMConfig {
@@ -78,6 +78,7 @@ export interface LLMConfig {
     openai: string;
     anthropic: string;
     deepseek: string;
+    openrouter: string;
   };
   apiKeysDates?: Record<LLMProvider, number>;
   apiKeysFirstUsed?: Record<LLMProvider, number>;
@@ -122,6 +123,7 @@ export interface ChatState {
     openai?: { discoveredModels: LLMModel[] };
     anthropic?: { discoveredModels: LLMModel[] };
     deepseek?: { discoveredModels: LLMModel[] };
+    openrouter?: { discoveredModels: LLMModel[] };
   };
   totalUsage: UsageStats;
   modelUsage: Record<string, UsageStats>;
@@ -145,6 +147,11 @@ export const AVAILABLE_MODELS: Record<LLMProvider, LLMModel[]> = {
   deepseek: [
     { id: 'deepseek-reasoner', name: 'DeepSeek R1', hasThinking: true, version: 1 },
     { id: 'deepseek-chat', name: 'DeepSeek V3', hasThinking: false, version: 1 },
+  ],
+  openrouter: [
+    { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet (OR)', hasThinking: false, version: 3 },
+    { id: 'google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash (OR)', hasThinking: false, version: 2 },
+    { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1 (OR)', hasThinking: true, version: 1 },
   ]
 };
 

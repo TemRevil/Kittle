@@ -82,7 +82,7 @@ export async function* streamLLMResponse(
   }
 
   // Check if model supports complex visual reasoning
-  const capableVisualModels = ['gemini', 'gpt-4', 'claude-3', 'sonnet', 'opus', 'o1', 'deepseek', 'f1'];
+  const capableVisualModels = ['gemini', 'gpt-4', 'claude-3', 'sonnet', 'opus', 'o1', 'deepseek', 'f1', 'openrouter'];
   const isVisualCapable = capableVisualModels.some(m => model.toLowerCase().includes(m));
 
   if (isDesignMode) {
@@ -343,28 +343,32 @@ export async function* streamLLMResponse(
       };
     }
 
-    // --- DEEPSEEK & OPENAI STREAMING ---
-    else if (provider === 'deepseek' || provider === 'openai') {
-      const baseUrl = provider === 'deepseek' ? "https://api.deepseek.com/v1" : "https://api.openai.com/v1";
-      const response = await fetch("/api/proxy", {
+    // --- DEEPSEEK, OPENAI & OPENROUTER STREAMING ---
+    else if (provider === 'deepseek' || provider === 'openai' || provider === 'openrouter') {
+      let baseUrl = "";
+      if (provider === 'deepseek') baseUrl = "https://api.deepseek.com/v1";
+      else if (provider === 'openrouter') baseUrl = "https://openrouter.ai/api/v1";
+      else baseUrl = "https://api.openai.com/v1";
+
+      const response = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: signal, // CORRECT: signal is part of fetch options
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+          ...(provider === 'openrouter' ? {
+            "HTTP-Referer": window.location.origin,
+            "X-Title": "Kittle AI"
+          } : {})
+        },
+        signal: signal,
         body: JSON.stringify({
-          url: `${baseUrl}/chat/completions`,
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`
-          },
-          body: {
-            model: model,
-            messages: [
-              { role: "system", content: systemInstructionText },
-              ...history.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: buildTranscript(m) })),
-              { role: "user", content: userContext }
-            ],
-            stream: true
-          }
+          model: model,
+          messages: [
+            { role: "system", content: systemInstructionText },
+            ...history.map(m => ({ role: m.role === 'model' ? 'assistant' : 'user', content: buildTranscript(m) })),
+            { role: "user", content: userContext }
+          ],
+          stream: true
         })
       });
 
@@ -389,6 +393,13 @@ export async function* streamLLMResponse(
             try {
               const json = JSON.parse(data);
               const content = json.choices[0]?.delta?.content;
+              const thinking = json.choices[0]?.delta?.reasoning_content;
+
+              if (thinking) {
+                completionThinking += thinking;
+                yield { thinkingDelta: thinking };
+                hasReceivedContent = true;
+              }
               if (content) {
                 completionText += content;
                 yield { textDelta: content };

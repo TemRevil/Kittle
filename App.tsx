@@ -45,19 +45,22 @@ const App: React.FC = () => {
         google: process.env.NEXT_PUBLIC_API_KEY || '',
         openai: '',
         anthropic: '',
-        deepseek: ''
+        deepseek: '',
+        openrouter: ''
       },
       apiKeysDates: {
         google: Date.now(),
         openai: 0,
         anthropic: 0,
-        deepseek: 0
+        deepseek: 0,
+        openrouter: 0
       },
       apiKeysFirstUsed: {
         google: 0,
         openai: 0,
         anthropic: 0,
-        deepseek: 0
+        deepseek: 0,
+        openrouter: 0
       }
     },
     totalUsage: {
@@ -193,7 +196,7 @@ const App: React.FC = () => {
 
       // 3. Authorization Check
       if (setupComplete) {
-        const providers: LLMProvider[] = ['google', 'openai', 'anthropic', 'deepseek'];
+        const providers: LLMProvider[] = ['google', 'openai', 'anthropic', 'deepseek', 'openrouter'];
         let allProvidedKeysValid = true;
         let atLeastOneKey = false;
 
@@ -211,7 +214,7 @@ const App: React.FC = () => {
         }
 
         const onlyHasDefaultKey = currentKeys.google === process.env.NEXT_PUBLIC_API_KEY &&
-          !currentKeys.openai && !currentKeys.anthropic && !currentKeys.deepseek;
+          !currentKeys.openai && !currentKeys.anthropic && !currentKeys.deepseek && !currentKeys.openrouter;
 
         if (atLeastOneKey && allProvidedKeysValid && !onlyHasDefaultKey) {
           setIsOnboarding(false);
@@ -320,7 +323,10 @@ const App: React.FC = () => {
 
   // Initialize theme
   useEffect(() => {
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
+      setIsDark(savedTheme === 'dark');
+    } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
       setIsDark(true);
     }
   }, []);
@@ -334,6 +340,7 @@ const App: React.FC = () => {
       root.classList.add('light');
       root.classList.remove('dark');
     }
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
   }, [isDark]);
 
   const toggleTheme = () => setIsDark(!isDark);
@@ -341,7 +348,7 @@ const App: React.FC = () => {
   // Key Verification Logic
   useEffect(() => {
     const verifyKeys = async () => {
-      const providers: LLMProvider[] = ['google', 'openai', 'anthropic', 'deepseek'];
+      const providers: LLMProvider[] = ['google', 'openai', 'anthropic', 'deepseek', 'openrouter'];
 
       for (const provider of providers) {
         const key = state.llmConfig.apiKeys[provider];
@@ -397,7 +404,7 @@ const App: React.FC = () => {
   const handleConfigChange = (newConfig: LLMConfig) => {
     // Determine which keys are newly added/changed to record their date
     const updatedDates = { ...(state.llmConfig.apiKeysDates || {}) } as Record<LLMProvider, number>;
-    const providers: LLMProvider[] = ['google', 'openai', 'anthropic', 'deepseek'];
+    const providers: LLMProvider[] = ['google', 'openai', 'anthropic', 'deepseek', 'openrouter'];
 
     providers.forEach(p => {
       // If the key is new/changed and it's not empty, set the date
@@ -909,6 +916,8 @@ const App: React.FC = () => {
         conversations={state.conversations}
         onResetUsage={handleResetUsage}
         onFullReset={handleFullReset}
+        isDark={isDark}
+        onToggleTheme={toggleTheme}
       />
 
       {/* Quota Error Overlay */}

@@ -4,8 +4,9 @@ const isProd = process.env.NODE_ENV === 'production';
 const nextConfig = {
     reactStrictMode: true,
     output: 'export',
-    basePath: isProd ? '/Kittle' : '',
-    assetPrefix: isProd ? '/Kittle/' : '',
+    // Served at the custom domain root (kittle.temrevil.com) — no base path.
+    basePath: '',
+    assetPrefix: '',
     images: {
         unoptimized: true,
     },
